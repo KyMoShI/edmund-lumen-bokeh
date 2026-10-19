@@ -1,28 +1,83 @@
 import os
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import (
+    Qt, QTimer, Signal, QThread, QMutex, QMutexLocker, QWaitCondition, QEventLoop,
+    QSettings, QStandardPaths,
+)
 from PySide6.QtGui import QAction, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QPushButton, QFileDialog,
     QVBoxLayout, QHBoxLayout, QFormLayout, QSlider, QComboBox, QCheckBox,
-    QMessageBox, QSplitter, QGroupBox, QStatusBar, QDialog, QDialogButtonBox
+    QMessageBox, QSplitter, QGroupBox, QStatusBar, QDialog, QDialogButtonBox,
+    QLineEdit, QScrollArea, QFrame,
 )
 
 from engine import BokehEngine, EngineSettings, MODE_AI, MODE_MANUAL
 from depth_worker import (
     DEFAULT_MODEL, MODEL_CHOICES, DepthWorker, model_label, resolve_model_path,
+    imported_models, add_imported_model, normalize_repo, is_complete_model_dir,
+    is_local_ref,
 )
 from theme import apply_theme, asset
+from version import __version__ as APP_VERSION
 
 APP_TITLE = "伯爵大光圈模拟"
 BRAND_LOGO = asset("brand", "logo-mark.png")
 APP_ICON = asset("brand", "app.ico")
+
+
+def _app_root():
+    """Source run -> project root; frozen exe -> the folder holding the exe."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+def _pick_settings_path():
+    """Pick a writable place for ``settings.ini``.
+
+    An INI file rather than the Windows registry: the registry can be locked
+    down, and keeping the INI next to the app keeps a portable copy
+    self-contained. Falls back to the per-user config folder when the app
+    folder turns out to be read-only.
+    """
+    candidates = [_app_root() / "settings.ini"]
+    config_dir = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.AppConfigLocation
+    )
+    if config_dir:
+        candidates.append(Path(config_dir) / "settings.ini")
+    for path in candidates:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            probe = path.parent / f".bjdgq-write-test-{os.getpid()}"
+            probe.write_bytes(b"0")
+            try:
+                probe.unlink()
+            except OSError:
+                pass
+            return path
+        except OSError:
+            continue
+    return candidates[-1]
+
+
+_SETTINGS_PATH = None
+
+
+def settings_path():
+    """Resolve (once) where the settings file lives."""
+    global _SETTINGS_PATH
+    if _SETTINGS_PATH is None:
+        _SETTINGS_PATH = _pick_settings_path()
+    return _SETTINGS_PATH
 
 
 def brand_pixmap(size):
@@ -152,6 +207,86 @@ def save_depth_map(path, depth, ext):
         raise
     except OSError as exc:
         raise IOError(f"写入深度图失败：{exc}") from exc
+
+
+@dataclass
+class RenderJob:
+    """One engine.process() request handed to the render thread."""
+
+    image: object
+    depth: object
+    settings: object
+    mode: int
+    kind: str            # "preview" | "export"
+    return_layers: bool = False
+    job_id: int = 0
+    tag: object = None   # identity token for callers that must match a job
+
+
+class RenderWorker(QThread):
+    """Run BokehEngine.process() off the GUI thread.
+
+    Rendering a full-resolution image takes seconds, so doing it on the GUI
+    thread froze the window ("未响应"). Here the engine runs on its own thread
+    and only the finished pixels are handed back. Preview requests are
+    coalesced - if several arrive while one is running, only the newest queued
+    preview is kept - while export requests are queued and never dropped.
+    """
+
+    finished_job = Signal(object)  # (RenderJob, result, error)
+
+    def __init__(self, engine):
+        super().__init__()
+        self._engine = engine
+        self._mutex = QMutex()
+        self._wait = QWaitCondition()
+        self._queue = []
+        self._seq = 0
+        self._closing = False
+
+    def submit(self, image, depth, settings, mode, kind="preview",
+               return_layers=False, tag=None):
+        with QMutexLocker(self._mutex):
+            self._seq += 1
+            job = RenderJob(
+                image, depth, settings, mode, kind, return_layers, self._seq, tag
+            )
+            if kind == "preview":
+                # A newer preview makes any queued preview obsolete.
+                self._queue = [j for j in self._queue if j.kind != "preview"]
+            self._queue.append(job)
+            job_id = job.job_id
+        self._wait.wakeOne()
+        return job_id
+
+    def run(self):
+        while True:
+            self._mutex.lock()
+            while not self._queue and not self._closing:
+                self._wait.wait(self._mutex)
+            if self._closing and not self._queue:
+                self._mutex.unlock()
+                return
+            job = self._queue.pop(0)
+            self._mutex.unlock()
+
+            try:
+                result = self._engine.process(
+                    job.image, job.depth, job.settings,
+                    mode=job.mode, return_layers=job.return_layers,
+                )
+                self.finished_job.emit((job, result, None))
+            except Exception as exc:  # noqa: BLE001 - reported to the GUI thread
+                self.finished_job.emit((job, None, exc))
+
+    def stop(self):
+        self._mutex.lock()
+        self._closing = True
+        self._mutex.unlock()
+        self._wait.wakeAll()
+        if not self.wait(3000):
+            self.terminate()
+            self.wait(1000)
 
 
 class ImageCanvas(QLabel):
@@ -401,10 +536,99 @@ class ExportDialog(QDialog):
         }
 
 
+class ModelImportDialog(QDialog):
+    """Import a depth model: a local HF-format folder, or a repo id / link."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("导入 AI 深度模型")
+        self.setMinimumWidth(460)
+
+        form = QFormLayout(self)
+        form.setContentsMargins(18, 16, 18, 16)
+        form.setSpacing(10)
+
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("可留空，默认用文件夹名或仓库名")
+        form.addRow("显示名称", self.name_edit)
+
+        local_row = QWidget()
+        local_layout = QHBoxLayout(local_row)
+        local_layout.setContentsMargins(0, 0, 0, 0)
+        self.local_edit = QLineEdit()
+        self.local_edit.setPlaceholderText("本地已下载的模型文件夹")
+        self.local_edit.textEdited.connect(self._local_edited)
+        browse = QPushButton("浏览…")
+        browse.clicked.connect(self._browse)
+        local_layout.addWidget(self.local_edit, 1)
+        local_layout.addWidget(browse)
+        form.addRow("本地模型文件夹", local_row)
+
+        self.repo_edit = QLineEdit()
+        self.repo_edit.setPlaceholderText("如 depth-anything/Depth-Anything-V2-Base-hf 或模型页面链接")
+        self.repo_edit.textEdited.connect(self._repo_edited)
+        form.addRow("仓库 ID / 链接", self.repo_edit)
+
+        note = QLabel(
+            "两者填一个即可。填本地文件夹：直接使用该模型，不联网。"
+            "填仓库 ID 或模型页面链接：本地没有时会在运行 AI 估算时联网下载"
+            "（依次尝试 hf-mirror 与 huggingface.co，支持断点续传）。"
+        )
+        note.setWordWrap(True)
+        note.setProperty("role", "hint")
+        form.addRow(note)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("导入")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
+        set_variant(buttons.button(QDialogButtonBox.StandardButton.Ok), "primary")
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def _browse(self):
+        path = QFileDialog.getExistingDirectory(self, "选择模型文件夹")
+        if path:
+            self.local_edit.setText(path)
+            self.repo_edit.clear()
+
+    def _local_edited(self, *_):
+        if self.local_edit.text().strip():
+            self.repo_edit.clear()
+
+    def _repo_edited(self, *_):
+        if self.repo_edit.text().strip():
+            self.local_edit.clear()
+
+    def _accept(self):
+        kind, _value, _name = self.values()
+        if kind is None:
+            QMessageBox.information(
+                self, "提示",
+                "请在“本地模型文件夹”和“仓库 ID / 链接”中只填写一个。",
+            )
+            return
+        self.accept()
+
+    def values(self):
+        """Return ``(kind, value, name)`` with kind ``"local"`` / ``"repo"``."""
+        local = self.local_edit.text().strip()
+        repo = self.repo_edit.text().strip()
+        name = self.name_edit.text().strip()
+        if local and not repo:
+            return ("local", local, name)
+        if repo and not local:
+            return ("repo", repo, name)
+        return (None, "", name)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(APP_TITLE)
+        self.setWindowTitle(f"{APP_TITLE}  v{APP_VERSION}")
         self.resize(1280, 800)
         self.engine = BokehEngine()
         self.original = None
@@ -416,6 +640,13 @@ class MainWindow(QMainWindow):
         self.depth_worker = None
         self._ai_generation = 0
         self.image_path = None
+
+        # All engine.process() work runs on this thread so a slow full-size
+        # render can never block the window (which used to show "未响应").
+        self.render_worker = RenderWorker(self.engine)
+        self.render_worker.finished_job.connect(self.on_render_finished)
+        self.render_worker.start()
+        self._preview_job = 0
 
         # Coalesce rapid slider events instead of rendering for every pixel move.
         self._render_timer = QTimer(self)
@@ -495,8 +726,6 @@ class MainWindow(QMainWindow):
         splitter.addWidget(preview_panel)
 
         controls = QWidget()
-        controls.setMinimumWidth(285)
-        controls.setMaximumWidth(350)
         controls_layout = QVBoxLayout(controls)
 
         camera_box = QGroupBox("镜头与虚化")
@@ -531,6 +760,24 @@ class MainWindow(QMainWindow):
         self.bokeh_size_value.setText("100%")
         self.bokeh_size.valueChanged.connect(self.on_settings_changed)
         camera_form.addRow("光斑大小", self.slider_row(self.bokeh_size, self.bokeh_size_value))
+
+        self.spherical_slider, self.spherical_value = self.make_slider(-100, 100, 0)
+        self.spherical_slider.valueChanged.connect(self.on_settings_changed)
+        self.spherical_slider.setToolTip(
+            "球差决定焦外光斑的亮度分布：正值＝欠校正（边缘亮环、硬朗的“肥皂泡”散景）；"
+            "负值＝过校正（中心亮、柔和的奶油散景）；0＝校正良好、亮度均匀。"
+        )
+        self.spherical_value.setText("0")
+        camera_form.addRow("球差", self.slider_row(self.spherical_slider, self.spherical_value))
+
+        self.cat_eye_slider, self.cat_eye_value = self.make_slider(0, 100, 0)
+        self.cat_eye_slider.valueChanged.connect(self.on_settings_changed)
+        self.cat_eye_slider.setToolTip(
+            "猫眼压缩：模拟画面边缘的机械暗角，把靠边的光斑横向压扁。"
+            "0＝所有光斑都是正圆（默认）；数值越大，靠边的光斑越像橄榄形。"
+        )
+        self.cat_eye_value.setText("0")
+        camera_form.addRow("猫眼压缩", self.slider_row(self.cat_eye_slider, self.cat_eye_value))
         controls_layout.addWidget(camera_box)
 
         depth_box = QGroupBox("景深与主体")
@@ -543,6 +790,25 @@ class MainWindow(QMainWindow):
         self.model_combo = QComboBox()
         depth_form.addRow("AI 模型", self.model_combo)
         self.refresh_model_labels()
+
+        self.import_model_btn = QPushButton("导入 AI 模型")
+        self.import_model_btn.setToolTip(
+            "导入本地模型文件夹，或填仓库 ID / 链接；本地没有时运行 AI 估算会自动联网下载"
+        )
+        self.import_model_btn.clicked.connect(self.import_model)
+        depth_form.addRow(self.import_model_btn)
+
+        self.depth_size = QComboBox()
+        self.depth_size.addItem("快速 · 518px（模型原生）", 518)
+        self.depth_size.addItem("标准 · 756px", 756)
+        self.depth_size.addItem("高 · 1036px", 1036)
+        self.depth_size.addItem("更高 · 1260px", 1260)
+        self.depth_size.setToolTip(
+            "AI 深度估算的推理分辨率：越高，边缘与细节越细，但更慢、更吃内存。"
+            "仅在下次运行 AI 估算时生效。"
+        )
+        self.depth_size.currentIndexChanged.connect(self.on_depth_size_changed)
+        depth_form.addRow("深度图分辨率", self.depth_size)
 
         self.focus_slider, self.focus_value = self.make_slider(0, 100, 45)
         self.focus_slider.valueChanged.connect(self.on_settings_changed)
@@ -577,6 +843,23 @@ class MainWindow(QMainWindow):
         self.keep_subject.setChecked(True)
         self.keep_subject.stateChanged.connect(self.on_settings_changed)
         depth_form.addRow(self.keep_subject)
+
+        self.subject_expand_slider, self.subject_expand_value = self.make_slider(-100, 100, 0)
+        self.subject_expand_slider.valueChanged.connect(self.on_settings_changed)
+        self.subject_expand_slider.setToolTip(
+            "主体边缘：负值收缩清晰主体（把深度误差造成的一圈边缘光晕收进去），"
+            "正值扩张主体（把主体边缘多包进来一点）。0＝自动。"
+        )
+        self.subject_expand_value.setText("0")
+        depth_form.addRow("主体边缘", self.slider_row(self.subject_expand_slider, self.subject_expand_value))
+
+        self.subject_feather_slider, self.subject_feather_value = self.make_slider(0, 100, 0)
+        self.subject_feather_slider.valueChanged.connect(self.on_settings_changed)
+        self.subject_feather_slider.setToolTip(
+            "边缘羽化：柔化主体与背景之间的过渡，用来掩盖深度模型在轮廓处的误差。"
+        )
+        self.subject_feather_value.setText("0")
+        depth_form.addRow("边缘羽化", self.slider_row(self.subject_feather_slider, self.subject_feather_value))
         controls_layout.addWidget(depth_box)
 
         output_box = QGroupBox("预览与输出")
@@ -589,6 +872,9 @@ class MainWindow(QMainWindow):
         self.gpu_label.setWordWrap(True)
         self.gpu_label.setProperty("role", "status")
         output_form.addRow("计算后端", self.gpu_label)
+        self.version_label = QLabel(f"v{APP_VERSION}")
+        self.version_label.setProperty("role", "status")
+        output_form.addRow("版本", self.version_label)
         controls_layout.addWidget(output_box)
         controls_layout.addStretch()
 
@@ -597,7 +883,26 @@ class MainWindow(QMainWindow):
         note.setProperty("role", "hint")
         controls_layout.addWidget(note)
 
-        splitter.addWidget(controls)
+        # Long combo entries (focus mode / model / preview names) would
+        # otherwise force the form wider than the column and clip the label
+        # column, so their minimum width is pinned to a few characters.
+        for combo in controls.findChildren(QComboBox):
+            combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
+            combo.setMinimumContentsLength(8)
+
+        # The control column keeps growing as options are added, so it lives in
+        # a scroll area: it never gets cut off on a short window/screen.
+        scroll = QScrollArea()
+        scroll.setObjectName("ControlsScroll")
+        scroll.setWidget(controls)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setMinimumWidth(300)
+        scroll.setMaximumWidth(400)
+        splitter.addWidget(scroll)
         splitter.setStretchFactor(0, 1)
         splitter.setSizes([940, 320])
 
@@ -617,9 +922,98 @@ class MainWindow(QMainWindow):
         save_action.triggered.connect(self.export_image)
         self.addAction(save_action)
 
+        # Restore the previous session's settings once every widget exists.
+        self._load_config()
+
     def _refresh_action_roles(self):
         """空状态禁用导出；有图后启用。按钮角色由 variant 固定，不随状态变。"""
         self.export_btn.setEnabled(self.original_full is not None)
+
+    # -- 配置记忆：下次打开继承上次设置 ------------------------------------
+
+    def _store(self):
+        return QSettings(str(settings_path()), QSettings.Format.IniFormat)
+
+    @staticmethod
+    def _as_bool(value, default):
+        if value is None:
+            return default
+        return str(value).strip().lower() in ("1", "true", "yes")
+
+    def _load_config(self):
+        """Restore the last-used settings so a fresh launch inherits them."""
+        store = self._store()
+
+        def as_int(key, default):
+            try:
+                return int(store.value(key))
+            except (TypeError, ValueError):
+                return default
+
+        self.aperture.setCurrentIndex(as_int("aperture", self.aperture.currentIndex()))
+        self.blur_slider.setValue(as_int("blur", self.blur_slider.value()))
+        self.bokeh_slider.setValue(as_int("bokeh", self.bokeh_slider.value()))
+        self.bokeh_shape.setCurrentIndex(
+            as_int("bokeh_shape", self.bokeh_shape.currentIndex())
+        )
+        self.bokeh_density.setValue(as_int("bokeh_density", self.bokeh_density.value()))
+        self.bokeh_size.setValue(as_int("bokeh_size", self.bokeh_size.value()))
+        self.spherical_slider.setValue(
+            as_int("spherical", self.spherical_slider.value())
+        )
+        self.cat_eye_slider.setValue(as_int("cat_eye", self.cat_eye_slider.value()))
+        self.focus_slider.setValue(as_int("focus", self.focus_slider.value()))
+        self.depth_strength.setValue(
+            as_int("depth_strength", self.depth_strength.value())
+        )
+        self.keep_subject.setChecked(self._as_bool(store.value("protect_subject"), True))
+        self.subject_expand_slider.setValue(
+            as_int("subject_expand", self.subject_expand_slider.value())
+        )
+        self.subject_feather_slider.setValue(
+            as_int("subject_feather", self.subject_feather_slider.value())
+        )
+        self.preview_scale.setCurrentIndex(
+            as_int("preview_scale", self.preview_scale.currentIndex())
+        )
+        self.depth_mode.setCurrentIndex(
+            as_int("depth_mode", self.depth_mode.currentIndex())
+        )
+        size_index = as_int("depth_size_index", self.depth_size.currentIndex())
+        if 0 <= size_index < self.depth_size.count():
+            self.depth_size.setCurrentIndex(size_index)
+        model = store.value("model")
+        if model:
+            index = self.model_combo.findData(str(model))
+            if index >= 0:
+                self.model_combo.setCurrentIndex(index)
+        geometry = store.value("geometry")
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        self.on_settings_changed()
+
+    def _save_config(self):
+        """Persist the current settings (called on close)."""
+        store = self._store()
+        store.setValue("aperture", self.aperture.currentIndex())
+        store.setValue("blur", self.blur_slider.value())
+        store.setValue("bokeh", self.bokeh_slider.value())
+        store.setValue("bokeh_shape", self.bokeh_shape.currentIndex())
+        store.setValue("bokeh_density", self.bokeh_density.value())
+        store.setValue("bokeh_size", self.bokeh_size.value())
+        store.setValue("spherical", self.spherical_slider.value())
+        store.setValue("cat_eye", self.cat_eye_slider.value())
+        store.setValue("focus", self.focus_slider.value())
+        store.setValue("depth_strength", self.depth_strength.value())
+        store.setValue("protect_subject", self.keep_subject.isChecked())
+        store.setValue("subject_expand", self.subject_expand_slider.value())
+        store.setValue("subject_feather", self.subject_feather_slider.value())
+        store.setValue("preview_scale", self.preview_scale.currentIndex())
+        store.setValue("depth_mode", self.depth_mode.currentIndex())
+        store.setValue("depth_size_index", self.depth_size.currentIndex())
+        store.setValue("model", self.model_combo.currentData() or "")
+        store.setValue("geometry", self.saveGeometry())
+        store.sync()
 
     def make_slider(self, minimum, maximum, value):
         slider = QSlider(Qt.Orientation.Horizontal)
@@ -645,11 +1039,57 @@ class MainWindow(QMainWindow):
         for name, repo_id, size in MODEL_CHOICES:
             status = "已下载" if resolve_model_path(repo_id) else "首次需下载"
             self.model_combo.addItem(f"{name}（{size}，{status}）", repo_id)
+        for item in imported_models():
+            ref = item["ref"]
+            if resolve_model_path(ref) is not None:
+                status = "本地可用"
+            elif is_local_ref(ref):
+                status = "目录不可用"
+            else:
+                status = "首次需下载"
+            self.model_combo.addItem(f"{item['name']}（导入，{status}）", ref)
         if current:
             index = self.model_combo.findData(current)
             if index >= 0:
                 self.model_combo.setCurrentIndex(index)
         self.model_combo.blockSignals(False)
+
+    def import_model(self):
+        dialog = ModelImportDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        kind, value, name = dialog.values()
+
+        if kind == "local":
+            ref = str(Path(os.path.expanduser(value)))
+            if not is_complete_model_dir(ref):
+                QMessageBox.critical(
+                    self, "导入失败",
+                    "该文件夹不是可用的深度模型：\n\n" + ref + "\n\n"
+                    "文件夹需要包含 config.json，以及权重文件 "
+                    "model.safetensors 或 pytorch_model.bin。",
+                )
+                return
+            label = name or Path(ref).name
+            hint = "本地模型，直接使用"
+        else:
+            ref = normalize_repo(value)
+            if not ref or "/" not in ref:
+                QMessageBox.critical(
+                    self, "导入失败",
+                    "请填写形如 owner/name 的仓库 ID，或完整的模型页面链接。",
+                )
+                return
+            label = name or ref
+            hint = "首次运行 AI 估算时会自动联网下载"
+
+        add_imported_model(label, ref)
+        self.refresh_model_labels()
+        index = self.model_combo.findData(ref)
+        if index >= 0:
+            self.model_combo.setCurrentIndex(index)
+        self.ai_hint.setText(f"已导入模型：{label}（{hint}）。")
+        self.statusBar().showMessage(f"已导入模型：{label}", 4000)
 
     def open_image(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -669,7 +1109,7 @@ class MainWindow(QMainWindow):
         self.depth_preview.set_depth(None)
         self.compare_btn.setChecked(False)
         self.reload_preview_size()
-        self.setWindowTitle(f"{APP_TITLE} · {Path(path).name}")
+        self.setWindowTitle(f"{APP_TITLE}  v{APP_VERSION} · {Path(path).name}")
         self._refresh_action_roles()
         self.statusBar().showMessage(
             f"已打开：{Path(path).name}（{image.shape[1]}×{image.shape[0]}）", 4000
@@ -720,6 +1160,10 @@ class MainWindow(QMainWindow):
             bokeh_blades=int(self.bokeh_shape.currentData()),
             bokeh_density=self.bokeh_density.value() / 100.0,
             bokeh_size=self.bokeh_size.value() / 100.0,
+            spherical=self.spherical_slider.value() / 100.0,
+            cat_eye=self.cat_eye_slider.value() / 100.0,
+            subject_expand=self.subject_expand_slider.value() / 100.0,
+            subject_feather=self.subject_feather_slider.value() / 100.0,
         )
 
     def on_settings_changed(self, *_):
@@ -728,14 +1172,31 @@ class MainWindow(QMainWindow):
             (self.bokeh_density, self.bokeh_density_value),
             (self.bokeh_size, self.bokeh_size_value),
             (self.focus_slider, self.focus_value),
-            (self.depth_strength, self.depth_strength_value)
+            (self.depth_strength, self.depth_strength_value),
+            (self.spherical_slider, self.spherical_value),
+            (self.cat_eye_slider, self.cat_eye_value),
+            (self.subject_expand_slider, self.subject_expand_value),
+            (self.subject_feather_slider, self.subject_feather_value)
         ]:
             label.setText(str(slider.value()))
         self.bokeh_size_value.setText(f"{self.bokeh_size.value()}%")
+        for slider, label in (
+            (self.spherical_slider, self.spherical_value),
+            (self.subject_expand_slider, self.subject_expand_value),
+        ):
+            value = slider.value()
+            label.setText(f"+{value}" if value > 0 else str(value))
         self.schedule_render()
 
     def schedule_render(self, *_):
         self._render_timer.start()
+
+    def on_depth_size_changed(self, *_):
+        """Resolution only affects the next AI run, so just tell the user."""
+        if self.original is not None:
+            self.statusBar().showMessage(
+                "深度图分辨率已更改，将在下次运行 AI 深度估算时生效。", 4000
+            )
 
     def on_depth_mode_changed(self, *_):
         mode = self.depth_mode.currentIndex()
@@ -780,14 +1241,73 @@ class MainWindow(QMainWindow):
         self._render_timer.stop()
         if self.original is None:
             return
+        mode = self.depth_mode.currentIndex()
+        depth = self.depth if mode in (MODE_AI, MODE_MANUAL) and self.depth is not None else None
         try:
-            mode = self.depth_mode.currentIndex()
-            depth = self.depth if mode in (MODE_AI, MODE_MANUAL) and self.depth is not None else None
-            self.processed = self.engine.process(self.original, depth, self.settings(), mode=mode)
-            self.after_canvas.set_image(self.original if self.compare_btn.isChecked() else self.processed)
-            self.status_label.setText(self.engine.backend_description)
+            self._preview_job = self.render_worker.submit(
+                self.original, depth, self.settings(), mode=mode, kind="preview"
+            )
         except Exception as exc:
             self.statusBar().showMessage(f"渲染失败：{exc}", 6000)
+
+    def on_render_finished(self, payload):
+        """Show a finished preview; exports are handled by their own waiter."""
+        job, result, error = payload
+        if job.kind != "preview" or job.job_id != self._preview_job:
+            return
+        if error is not None:
+            self.statusBar().showMessage(f"渲染失败：{error}", 6000)
+            return
+        self.processed = result
+        self.after_canvas.set_image(
+            self.original if self.compare_btn.isChecked() else result
+        )
+        self.status_label.setText(self.engine.backend_description)
+
+    def _run_render_job(self, image, depth, settings, mode,
+                        kind="export", return_layers=False):
+        """Run one job on the render thread and wait for it here.
+
+        The GUI event loop keeps running while we wait (a nested QEventLoop), so
+        the window stays responsive during a long export instead of freezing.
+        """
+        token = object()
+        state = {"result": None, "error": None, "timed_out": False}
+        loop = QEventLoop(self)
+
+        def on_result(payload):
+            job, result, error = payload
+            if job.tag is token:
+                state["result"] = result
+                state["error"] = error
+                loop.quit()
+
+        # Safety net: never wait forever if the render thread fails to report.
+        timeout = QTimer(self)
+        timeout.setSingleShot(True)
+        timeout.timeout.connect(lambda: (state.__setitem__("timed_out", True), loop.quit()))
+
+        self.render_worker.finished_job.connect(on_result)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        timeout.start(60000)
+        try:
+            self.render_worker.submit(
+                image, depth, settings, mode,
+                kind=kind, return_layers=return_layers, tag=token,
+            )
+            loop.exec()
+        finally:
+            timeout.stop()
+            try:
+                self.render_worker.finished_job.disconnect(on_result)
+            except (RuntimeError, TypeError):
+                pass
+            QApplication.restoreOverrideCursor()
+        if state["result"] is None and state["error"] is None:
+            raise TimeoutError("渲染超时：60 秒内没有返回结果。")
+        if state["error"] is not None:
+            raise state["error"]
+        return state["result"]
 
     def run_ai_depth(self):
         if self.original is None:
@@ -798,7 +1318,12 @@ class MainWindow(QMainWindow):
 
         self._ai_generation += 1
         model_id = self.model_combo.currentData() or DEFAULT_MODEL
-        worker = DepthWorker(self.original.copy(), generation=self._ai_generation, model_id=model_id)
+        worker = DepthWorker(
+            self.original.copy(),
+            generation=self._ai_generation,
+            model_id=model_id,
+            depth_size=int(self.depth_size.currentData() or 0),
+        )
         self.depth_worker = worker
         worker.finished_depth.connect(lambda depth, w=worker: self.ai_finished(depth, w))
         worker.failed.connect(lambda message, w=worker: self.ai_failed(message, w))
@@ -807,7 +1332,9 @@ class MainWindow(QMainWindow):
         self.ai_btn.setEnabled(False)
         self.ai_btn.setText("正在估算深度…")
         self.model_combo.setEnabled(False)
+        self.import_model_btn.setEnabled(False)
         self.import_depth_btn.setEnabled(False)
+        self.depth_size.setEnabled(False)
         self.ai_hint.setText(f"正在准备模型：{model_label(model_id)}…")
         self.statusBar().showMessage("正在估算深度，请稍候…")
         worker.start()
@@ -949,7 +1476,9 @@ class MainWindow(QMainWindow):
         self.ai_btn.setEnabled(True)
         self.ai_btn.setText("运行 AI 深度估算")
         self.model_combo.setEnabled(True)
+        self.import_model_btn.setEnabled(True)
         self.import_depth_btn.setEnabled(True)
+        self.depth_size.setEnabled(True)
         self.refresh_model_labels()
 
         if worker.generation != self._ai_generation or self.original is None:
@@ -993,7 +1522,9 @@ class MainWindow(QMainWindow):
         self.ai_btn.setEnabled(True)
         self.ai_btn.setText("运行 AI 深度估算")
         self.model_combo.setEnabled(True)
+        self.import_model_btn.setEnabled(True)
         self.import_depth_btn.setEnabled(True)
+        self.depth_size.setEnabled(True)
         self.refresh_model_labels()
         if worker.generation != self._ai_generation:
             self.ai_hint.setText("图片或预览尺寸已变化，本次估算结果已丢弃。")
@@ -1081,18 +1612,16 @@ class MainWindow(QMainWindow):
             settings.bokeh_aa = int(options["aa"])
 
             self.statusBar().showMessage(f"正在导出 {out_w}×{out_h}…", 0)
-            QApplication.processEvents()
 
+            out = self._run_render_job(
+                work_image, depth, settings, mode,
+                kind="export", return_layers=layer,
+            )
             if layer:
-                _final, effect, alpha = self.engine.process(
-                    work_image, depth, settings, mode=mode, return_layers=True
-                )
+                _final, effect, alpha = out
                 save_rgba_png(path, effect, alpha)
                 note = "\n\n透明图层已包含虚化/光斑，叠在原图上方即可还原。"
             else:
-                out = self.engine.process(
-                    work_image, depth, settings, mode=mode
-                )
                 save_image_file(
                     path, out, fmt, quality=int(options["quality"])
                 )
@@ -1126,6 +1655,8 @@ class MainWindow(QMainWindow):
                 worker.terminate()
                 worker.wait(1000)
         self.depth_worker = None
+        self.render_worker.stop()
+        self._save_config()
         if self._render_timer.isActive():
             self._render_timer.stop()
         super().closeEvent(event)
@@ -1145,6 +1676,7 @@ if __name__ == "__main__":
     window.show()
     if selftest:
         app.processEvents()
+        window.close()  # stop the render/depth threads before exiting
         # --windowed 打包后 stdout 是 None，直接 print 会抛异常
         stream = sys.stdout or sys.stderr
         if stream is not None:

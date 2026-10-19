@@ -1,0 +1,12 @@
+# 统一换行：源码/文档用 LF，批处理用 CRLF；二进制不做处理
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.ttf binary
+*.otf binary
