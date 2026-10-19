@@ -1,0 +1,71 @@
+# 推 v* 标签时自动打包并创建 GitHub Release。
+#
+#   git tag -a v1.1.0 -m "v1.1.0"
+#   git push origin v1.1.0
+#
+# 也可以在 Actions 页面手动触发（手动触发只构建，不创建 Release）。
+# 产物：轻量版 zip + AI 版 zip（AI 版构建失败不会阻断 Release，只是少一个附件）。
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install base deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Selftest (offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python app/main.py --selftest
+
+      - name: Build (light)
+        run: python tools/build_exe.py --clean
+
+      - name: Package light build
+        shell: pwsh
+        run: |
+          Rename-Item "dist/伯爵大光圈模拟" "伯爵大光圈模拟-${{ github.ref_name }}-轻量版"
+          Compress-Archive -Path "dist/伯爵大光圈模拟-${{ github.ref_name }}-轻量版" `
+            -DestinationPath "dist/伯爵大光圈模拟-${{ github.ref_name }}-轻量版.zip"
+
+      - name: Install AI deps
+        continue-on-error: true
+        run: python -m pip install -r requirements-ai.txt
+
+      - name: Build (with AI)
+        continue-on-error: true
+        run: python tools/build_exe.py --clean --with-ai
+
+      - name: Package AI build
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Rename-Item "dist/伯爵大光圈模拟" "伯爵大光圈模拟-${{ github.ref_name }}-AI版"
+          Compress-Archive -Path "dist/伯爵大光圈模拟-${{ github.ref_name }}-AI版" `
+            -DestinationPath "dist/伯爵大光圈模拟-${{ github.ref_name }}-AI版.zip"
+
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: dist/*.zip
+          generate_release_notes: true

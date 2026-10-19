@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import time
@@ -35,6 +36,9 @@ def model_label(repo_id):
     for name, rid, _size in MODEL_CHOICES:
         if rid == repo_id:
             return name
+    for item in _load_imported():
+        if item["ref"] == repo_id:
+            return item["name"]
     return repo_id
 
 
@@ -47,12 +51,15 @@ def model_dir(repo_id):
 
 
 def _is_complete(path):
+    """A usable model folder needs a config plus at least one weight file."""
     config = path / "config.json"
-    weights = path / "model.safetensors"
-    return (
-        config.is_file() and config.stat().st_size > 10
-        and weights.is_file() and weights.stat().st_size > 1_000_000
-    )
+    if not (config.is_file() and config.stat().st_size > 10):
+        return False
+    for weights in ("model.safetensors", "pytorch_model.bin"):
+        candidate = path / weights
+        if candidate.is_file() and candidate.stat().st_size > 1_000_000:
+            return True
+    return False
 
 
 def _legacy_snapshot(repo_id):
@@ -73,11 +80,101 @@ def _legacy_snapshot(repo_id):
 
 
 def resolve_model_path(repo_id):
-    """Return a local model directory, or None when it still needs downloading."""
-    local = model_dir(repo_id)
+    """Return a local model directory, or None when it still needs downloading.
+
+    ``repo_id`` is either a Hugging Face id (``owner/name``) or a path to a
+    folder the user imported from disk; an imported folder is used in place.
+    """
+    ref = (repo_id or "").strip()
+    if not ref:
+        return None
+    folder = Path(os.path.expanduser(ref))
+    if folder.is_dir():
+        return folder if _is_complete(folder) else None
+    local = model_dir(ref)
     if _is_complete(local):
         return local
-    return _legacy_snapshot(repo_id)
+    return _legacy_snapshot(ref)
+
+
+# --------------------------------------------------------------------------
+# Imported models: a local folder or an extra Hugging Face repo. Persisted so
+# the list survives the next launch.
+# --------------------------------------------------------------------------
+
+_IMPORTED_FILE = _CACHE_DIR / "imported_models.json"
+
+
+def _load_imported():
+    try:
+        raw = json.loads(_IMPORTED_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    entries = []
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        ref = str(item.get("ref", "")).strip()
+        if ref:
+            entries.append(
+                {"name": str(item.get("name", "")).strip() or ref, "ref": ref}
+            )
+    return entries
+
+
+def _save_imported(entries):
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _IMPORTED_FILE.write_text(
+            json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except OSError:
+        # A read-only install folder must not break model import.
+        pass
+
+
+def imported_models():
+    """Custom models the user added, as ``[{"name": ..., "ref": ...}]``."""
+    return _load_imported()
+
+
+def add_imported_model(name, ref):
+    """Add (or replace) an imported model and return the updated list."""
+    ref = (ref or "").strip()
+    if not ref:
+        return _load_imported()
+    entries = [item for item in _load_imported() if item["ref"] != ref]
+    entries.append({"name": (name or "").strip() or ref, "ref": ref})
+    _save_imported(entries)
+    return entries
+
+
+def normalize_repo(text):
+    """Turn a Hugging Face id or page URL into ``owner/name``."""
+    text = (text or "").strip().rstrip("/")
+    if not text:
+        return ""
+    if "://" in text:
+        text = text.split("://", 1)[1]
+        text = text.split("/", 1)[1] if "/" in text else ""
+    text = text.split("#", 1)[0].split("?", 1)[0].strip("/")
+    parts = [part for part in text.split("/") if part]
+    for marker in ("tree", "blob", "resolve", "raw", "commit"):
+        if marker in parts:
+            parts = parts[:parts.index(marker)]
+    if len(parts) >= 2:
+        return f"{parts[0]}/{parts[1]}"
+    return parts[0] if parts else ""
+
+
+def is_complete_model_dir(path):
+    """True when ``path`` is a usable local model folder."""
+    return _is_complete(Path(os.path.expanduser(str(path))))
+
+
+def is_local_ref(ref):
+    """True when ``ref`` points at a folder on disk rather than a repo id."""
+    return os.path.isdir(os.path.expanduser((ref or "").strip()))
 
 
 def _format_size(num_bytes):
@@ -154,13 +251,27 @@ def _fetch_file(repo_id, filename, dest, progress, should_stop):
 
 
 def ensure_model(repo_id, progress=None, should_stop=None):
-    """Return a local model directory, downloading it (with resume) if needed."""
-    existing = resolve_model_path(repo_id)
+    """Return a local model directory, downloading it (with resume) if needed.
+
+    Accepts a Hugging Face id (downloaded into ``models/`` when missing) or a
+    folder the user imported from disk (used in place, never downloaded).
+    """
+    ref = (repo_id or "").strip()
+    folder = Path(os.path.expanduser(ref)) if ref else None
+    if folder is not None and folder.is_dir():
+        if is_complete_model_dir(folder):
+            return folder
+        raise RuntimeError(
+            f"本地模型目录不完整：{folder}\n"
+            "需要包含 config.json，以及权重文件 model.safetensors 或 pytorch_model.bin。"
+        )
+
+    existing = resolve_model_path(ref)
     if existing is not None:
         return existing
 
     should_stop = should_stop or (lambda: False)
-    target = model_dir(repo_id)
+    target = model_dir(ref)
     target.mkdir(parents=True, exist_ok=True)
     for filename in _MODEL_FILES:
         dest = target / filename
@@ -171,7 +282,7 @@ def ensure_model(repo_id, progress=None, should_stop=None):
                 continue
         if progress:
             progress(f"准备下载模型：{filename}")
-        if not _fetch_file(repo_id, filename, dest, progress, should_stop):
+        if not _fetch_file(ref, filename, dest, progress, should_stop):
             return None
 
     if not _is_complete(target):
@@ -184,31 +295,64 @@ class DepthWorker(QThread):
     failed = Signal(str)
     progress = Signal(str)
 
-    # Keep only the active pipeline alive; large models would otherwise stack up.
-    _pipeline = None
-    _pipeline_key = None
+    # Keep only the active model alive; large models would otherwise stack up.
+    # The transformers *pipeline* is deliberately bypassed: its preprocess()
+    # signature has no ``size`` argument, so the working resolution could not be
+    # chosen through it. Loading the processor + model directly fixes that.
+    _processor = None
+    _model = None
+    _model_key = None
 
-    def __init__(self, image, generation=0, model_id=DEFAULT_MODEL):
+    def __init__(self, image, generation=0, model_id=DEFAULT_MODEL, depth_size=0):
         super().__init__()
         self.image = image
         self.generation = generation
         self.model_id = model_id
+        self.depth_size = int(depth_size or 0)
 
     @classmethod
-    def _get_pipeline(cls, model_path):
+    def _get_model(cls, model_path):
         import torch
-        from transformers import pipeline
+        from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 
         key = str(model_path)
-        if cls._pipeline_key != key:
-            device = 0 if torch.cuda.is_available() else -1
-            cls._pipeline = pipeline(
-                task="depth-estimation",
-                model=key,
-                device=device,
-            )
-            cls._pipeline_key = key
-        return cls._pipeline
+        if cls._model_key != key:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            cls._processor = AutoImageProcessor.from_pretrained(key)
+            cls._model = AutoModelForDepthEstimation.from_pretrained(key).to(device).eval()
+            cls._model_key = key
+        return cls._processor, cls._model
+
+    def _infer(self, processor, model, pil):
+        """Estimate depth, honouring the requested working resolution.
+
+        Depth Anything resizes inside the processor to a fixed size, so the
+        resolution is chosen by passing ``size`` straight to the processor. It
+        is snapped to a multiple of 14 (the model's patch size) and falls back
+        to the model default when a processor rejects it.
+        """
+        import torch
+
+        base = {"images": pil, "return_tensors": "pt"}
+        size = self.depth_size
+        if size > 0:
+            size = max(14, int(round(size / 14.0)) * 14)
+            try:
+                inputs = processor(**base, size={"height": size, "width": size})
+            except Exception:
+                if self.isInterruptionRequested():
+                    raise
+                self.progress.emit("该模型不支持自定义分辨率，回退到默认分辨率。")
+                inputs = processor(**base)
+        else:
+            inputs = processor(**base)
+
+        with torch.no_grad():
+            outputs = model(**inputs)
+        return torch.nn.functional.interpolate(
+            outputs.predicted_depth.unsqueeze(1), size=pil.size[::-1],
+            mode="bicubic", align_corners=False,
+        ).squeeze().cpu().numpy()
 
     def run(self):
         try:
@@ -226,17 +370,16 @@ class DepthWorker(QThread):
             if model_path is None or self.isInterruptionRequested():
                 return
 
-            estimator = self._get_pipeline(model_path)
+            processor, model = self._get_model(model_path)
             if self.isInterruptionRequested():
                 return
 
             pil = self._to_pil(self.image)
-            result = estimator(pil)
+            depth = self._infer(processor, model, pil)
             if self.isInterruptionRequested():
                 return
 
-            depth_img = result["depth"]
-            depth = np.asarray(depth_img).astype(np.float32)
+            depth = np.asarray(depth).astype(np.float32)
             if depth.ndim == 3:
                 depth = cv2.cvtColor(depth, cv2.COLOR_RGB2GRAY).astype(np.float32)
             depth = cv2.resize(depth, (self.image.shape[1], self.image.shape[0]), interpolation=cv2.INTER_CUBIC)

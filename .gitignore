@@ -1,0 +1,30 @@
+# 运行环境
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 打包产物
+build/
+dist/
+*.spec
+
+# 模型权重（体积大，首次运行时下载到 models/）
+models/
+
+# 导出结果
+exports/
+app/exports/
+
+# 本地设置（配置记忆写在这里，随机器不同而不同；.lock/.tmp 是 Qt 的临时文件）
+settings.ini*
+
+# 本地安装的设计工具（见 design-system/README.md）
+.claude/
+
+# 编译缓存 / 系统杂物
+torchinductor_*/
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini

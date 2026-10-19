@@ -59,6 +59,14 @@ def build(onefile: bool, with_ai: bool, clean: bool) -> Path:
     if not with_ai:
         for module in HEAVY_EXCLUDES:
             cmd += ["--exclude-module", module]
+    else:
+        # The AI imports are lazy (inside functions) and transformers resolves
+        # model classes dynamically at load time, so collect the whole package
+        # instead of trusting PyInstaller's static analysis alone. Without this
+        # a frozen build still fails with "No module named 'torch'".
+        cmd += ["--collect-submodules", "transformers"]
+        for module in ("torch", "tokenizers", "safetensors", "huggingface_hub"):
+            cmd += ["--hidden-import", module]
     cmd.append(str(ENTRY))
 
     print("执行：", " ".join(f'"{c}"' if " " in c else c for c in cmd))

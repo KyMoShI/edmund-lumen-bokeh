@@ -240,6 +240,11 @@ QStatusBar {
 }
 QStatusBar::item { border: none; }
 
+/* ---------- 可滚动控制栏：控件变多时不撑破窗口 ---------- */
+
+QScrollArea#ControlsScroll { background: transparent; border: none; }
+QScrollArea#ControlsScroll > QWidget > QWidget { background: transparent; }
+
 /* ---------- 滚动条 ---------- */
 
 QScrollBar:vertical {

@@ -38,6 +38,10 @@ class EngineSettings:
     bokeh_density: float = 0.55
     bokeh_size: float = 1.0
     bokeh_aa: int = 1
+    spherical: float = 0.0
+    cat_eye: float = 0.0
+    subject_expand: float = 0.0
+    subject_feather: float = 0.0
 
 
 class BokehEngine:
@@ -96,7 +100,9 @@ class BokehEngine:
     def _aperture_points(cx, cy, rx, ry, blade_count, rotation):
         """Rounded aperture outline; real blades are curved, not sharp."""
         if blade_count < 3:
-            angles = np.linspace(0.0, 2.0 * np.pi, 48, endpoint=False)
+            # Dense sampling: a coarse polygon reads as facets once the disc is
+            # drawn large (the "circle" aperture must stay a true circle).
+            angles = np.linspace(0.0, 2.0 * np.pi, 128, endpoint=False)
             return np.stack(
                 [cx + rx * np.cos(angles), cy + ry * np.sin(angles)], axis=1
             )
@@ -200,6 +206,11 @@ class BokehEngine:
 
         blade_count = int(settings.bokeh_blades)
         aa = max(1, min(3, int(getattr(settings, "bokeh_aa", 1))))
+        # Spherical aberration reshapes the highlight disc itself, so it is read
+        # once and applied to every drawn disc (see the per-disc block below).
+        spherical = float(np.clip(getattr(settings, "spherical", 0.0), -1.0, 1.0))
+        # Cat's-eye strength (mechanical vignetting at the frame edge).
+        cat_eye = float(np.clip(getattr(settings, "cat_eye", 0.0), 0.0, 1.0))
         # Radii were originally tuned on a 1000px working image. Scale them with
         # the render resolution so a 24 MP export has the same relative bokeh
         # size as the preview instead of tiny discs.
@@ -221,9 +232,12 @@ class BokehEngine:
             jitter = 0.90 + 0.20 * ((np.sin((index + 1) * 12.9898) * 43758.5453) % 1.0)
             radius = min(radius * jitter, 40.0 * radius_scale * max(settings.bokeh_size, 1.0))
 
-            # Cat's-eye: discs near the frame edge are squeezed horizontally.
+            # Cat's-eye: real mechanical vignetting squeezes discs near the
+            # frame edge horizontally. It is 0 by default, so the "circle"
+            # aperture stays a true circle everywhere and the user can dial the
+            # squash in when they want the look.
             edge = abs(cx - sw * 0.5) / max(sw * 0.5, 1.0)
-            squash = 1.0 - 0.45 * edge * edge
+            squash = 1.0 - (0.5 * cat_eye) * edge * edge
             if blade_count < 3:
                 rotation = 0.0
             else:
@@ -267,12 +281,41 @@ class BokehEngine:
             local = np.round(
                 points - np.array([x0, y0], dtype=np.float32)
             ).astype(np.int32)
-            fill_color = (color * (strength * 0.95)).tolist()
-            rim_color = (color * (strength * 0.99)).tolist()
-            rim_thickness = max(1, int(round(radius * 0.06)))
+            # Spherical aberration decides whether the disc's light sits on the
+            # rim or in the core. Under-corrected lenses brighten and thicken the
+            # rim (bright-edge "soap bubble" bokeh); over-corrected lenses dim the
+            # rim and build a bright core; a corrected lens stays near-uniform.
+            if spherical >= 0.0:
+                fill_gain = 1.0 - 0.28 * spherical
+                rim_gain = 1.0 + 0.30 * spherical
+                core_gain = 0.0
+                rim_thickness = max(
+                    1, int(round(radius * (0.06 + 0.05 * spherical)))
+                )
+            else:
+                m = -spherical
+                fill_gain = 1.0 - 0.35 * m
+                rim_gain = 1.0 - 0.65 * m
+                core_gain = 0.85 * m
+                rim_thickness = max(1, int(round(radius * 0.05)))
+
+            fill_color = (color * (strength * 0.95 * fill_gain)).tolist()
+            rim_color = (color * (strength * 0.99 * rim_gain)).tolist()
+
+            core_local = None
+            core_color = None
+            if core_gain > 0.01:
+                core = (points - np.array([cx, cy], dtype=np.float32)) * 0.55
+                core += np.array([cx, cy], dtype=np.float32)
+                core_local = np.round(
+                    core - np.array([x0, y0], dtype=np.float32)
+                ).astype(np.int32)
+                core_color = (
+                    color * min(1.0, strength * (0.95 * fill_gain + core_gain))
+                ).tolist()
 
             ring_local = None
-            if radius >= 16.0 and index % 5 == 0:
+            if spherical > 0.0 and radius >= 16.0 and index % 5 == 0:
                 ring = (points - np.array([cx, cy], dtype=np.float32)) * 0.68
                 ring += np.array([cx, cy], dtype=np.float32)
                 ring_local = np.round(
@@ -289,6 +332,8 @@ class BokehEngine:
                     patch, [local_aa], True, rim_color,
                     max(1, rim_thickness * aa), cv2.LINE_8,
                 )
+                if core_local is not None:
+                    cv2.fillPoly(patch, [core_local * aa], core_color, cv2.LINE_8)
                 if ring_local is not None:
                     ring_mask = np.zeros((patch_h * aa, patch_w * aa), dtype=np.float32)
                     cv2.polylines(
@@ -301,11 +346,14 @@ class BokehEngine:
                 )
             else:
                 patch = np.zeros((patch_h, patch_w, 3), dtype=np.float32)
-                # Soap-bubble look: mostly filled, with a brighter rim.
+                # Aperture-shaped fill, then the rim/core that spherical
+                # aberration emphasised.
                 cv2.fillPoly(patch, [local], fill_color, cv2.LINE_AA)
                 cv2.polylines(
                     patch, [local], True, rim_color, rim_thickness, cv2.LINE_AA
                 )
+                if core_local is not None:
+                    cv2.fillPoly(patch, [core_local], core_color, cv2.LINE_AA)
                 if ring_local is not None:
                     ring_mask = np.zeros((patch_h, patch_w), dtype=np.float32)
                     cv2.polylines(
@@ -336,20 +384,58 @@ class BokehEngine:
         return cv2.add(blurred, layer_u8)
 
     @staticmethod
-    def _disc_kernel(radius, blade_count):
+    def _spherical_profile(normalized_radius, spherical):
+        """Radial energy weighting of a defocus PSF under spherical aberration.
+
+        Only the shape matters: the caller renormalises the disc kernel, so the
+        total light is unchanged. Spherical aberration redistributes energy
+        inside the circle of confusion instead of adding any:
+
+        * ``spherical > 0`` - under-corrected lens. Energy migrates to the rim,
+          which is the bright-edged "soap bubble" bokeh of simple fast lenses.
+        * ``spherical < 0`` - over-corrected lens. Energy collects at the centre
+          for a soft, bright-core disc.
+        * ``0`` - a well-corrected lens leaves the plain uniform disc.
+        """
+        s = float(np.clip(spherical, -1.0, 1.0))
+        if abs(s) < 1e-3:
+            return np.ones_like(normalized_radius)
+        if s > 0.0:
+            ring = np.exp(-((normalized_radius - 1.0) / 0.18) ** 2)
+            return 1.0 + 2.4 * s * ring
+        m = -s
+        core = np.exp(-(normalized_radius / 0.45) ** 2)
+        return (1.0 - 0.85 * m) + 1.7 * m * core
+
+    @staticmethod
+    def _disc_kernel(radius, blade_count, spherical=0.0):
         """Aperture-shaped (pillbox) defocus kernel, normalised to unit sum."""
         radius = max(1, int(round(radius)))
         size = radius * 2 + 1
-        kernel = np.zeros((size, size), dtype=np.float32)
         if blade_count < 3:
-            cv2.circle(kernel, (radius, radius), radius, 1.0, -1, cv2.LINE_AA)
+            # Analytic anti-aliased disc from the distance field. cv2.circle()
+            # rasterises a coarse polygon whose flat edges are visible in the
+            # defocused background (severe at small radii), so a true circle is
+            # built here instead.
+            yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+            dist = np.sqrt((xx - radius) ** 2 + (yy - radius) ** 2)
+            kernel = np.clip(radius + 0.5 - dist, 0.0, 1.0).astype(np.float32)
         else:
+            kernel = np.zeros((size, size), dtype=np.float32)
             points = BokehEngine._aperture_points(
                 radius, radius, radius, radius, blade_count, 0.0
             )
             cv2.fillPoly(
                 kernel, [np.round(points).astype(np.int32)], 1.0, cv2.LINE_AA
             )
+        # Spherical aberration reshapes the radial energy of the disc. Applied
+        # before the smoothing below, and the kernel is renormalised, so the
+        # bright-rim / bright-core look is preserved with no change in exposure.
+        if abs(float(np.clip(spherical, -1.0, 1.0))) > 1e-3:
+            yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+            dist = np.sqrt((xx - radius) ** 2 + (yy - radius) ** 2)
+            t = np.clip(dist / max(float(radius), 1e-6), 0.0, 1.5)
+            kernel *= BokehEngine._spherical_profile(t, spherical)
         # A real defocus PSF has a slightly soft edge from diffraction/aberration;
         # this also suppresses FFT ringing on high-contrast background edges.
         kernel = cv2.GaussianBlur(kernel, (0, 0), 0.6)
@@ -357,7 +443,7 @@ class BokehEngine:
         return kernel / total if total > 0 else kernel
 
     @staticmethod
-    def _disc_blur_levels(image, radii, blade_count):
+    def _disc_blur_levels(image, radii, blade_count, spherical=0.0):
         """Convolve the image with aperture-shaped PSFs at several radii.
 
         Uses a single padded FFT of the image, then one inverse FFT per radius,
@@ -383,7 +469,7 @@ class BokehEngine:
 
         results = []
         for radius in radii:
-            kernel = BokehEngine._disc_kernel(radius, blade_count)
+            kernel = BokehEngine._disc_kernel(radius, blade_count, spherical)
             kh, kw = kernel.shape
             kernel_padded = np.zeros((fh, fw), dtype=np.float32)
             kernel_padded[:kh, :kw] = kernel
@@ -451,6 +537,28 @@ class BokehEngine:
         threshold = 2.6 if settings.protect_subject else 1.9
         sharp = np.clip(1.0 - coc * threshold, 0.0, 1.0)
         sharp = sharp * sharp * (3.0 - 2.0 * sharp)
+
+        # Subject-edge adjustment. A monocular depth model is least reliable
+        # right at a silhouette, so let the user grow/shrink the sharp region
+        # (to pull the halo in or out) and feather it (to blend the boundary).
+        short_side = max(1, min(h, w))
+        edge_px = int(round(
+            float(np.clip(getattr(settings, "subject_expand", 0.0), -1.0, 1.0))
+            * short_side * 0.012
+        ))
+        edge_px = int(np.clip(edge_px, -30, 30))
+        if edge_px:
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (abs(edge_px) * 2 + 1, abs(edge_px) * 2 + 1)
+            )
+            sharp = cv2.dilate(sharp, kernel) if edge_px > 0 else cv2.erode(sharp, kernel)
+        feather = float(np.clip(getattr(settings, "subject_feather", 0.0), 0.0, 1.0))
+        if feather > 1e-3:
+            sharp = cv2.GaussianBlur(
+                sharp.astype(np.float32), (0, 0), sigmaX=feather * short_side * 0.010
+            )
+        sharp = np.clip(sharp, 0.0, 1.0)
+
         # Remove a small margin around the subject from the background plate as
         # well; otherwise antialiased subject-edge pixels leak a coloured fringe
         # through the (now disc-shaped) defocus convolution.
@@ -509,7 +617,9 @@ class BokehEngine:
         blade_count = int(settings.bokeh_blades)
         levels = (0.40, 0.70, 1.00)
         radii = [max(1.0, radius_small * level) for level in levels]
-        blurred_levels = self._disc_blur_levels(clean, radii, blade_count)
+        blurred_levels = self._disc_blur_levels(
+            clean, radii, blade_count, float(getattr(settings, "spherical", 0.0))
+        )
 
         for level, blurred in zip(levels, blurred_levels):
             alpha = np.clip((coc_s - (1.0 - level) * 0.20) / max(level + 0.05, 1e-3), 0, 1)
