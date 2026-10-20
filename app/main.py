@@ -1,7 +1,9 @@
 import os
+import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import cv2
@@ -9,15 +11,18 @@ import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
 from PySide6.QtCore import (
     Qt, QTimer, Signal, QThread, QMutex, QMutexLocker, QWaitCondition, QEventLoop,
-    QSettings, QStandardPaths,
+    QSettings, QStandardPaths, QPointF, QRectF, QUrl,
 )
-from PySide6.QtGui import QAction, QIcon, QImage, QPixmap
+from PySide6.QtGui import (
+    QAction, QDesktopServices, QIcon, QImage, QPainter, QPixmap,
+)
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QPushButton, QFileDialog,
     QVBoxLayout, QHBoxLayout, QFormLayout, QSlider, QComboBox, QCheckBox,
     QMessageBox, QSplitter, QGroupBox, QStatusBar, QDialog, QDialogButtonBox,
-    QLineEdit, QScrollArea, QFrame,
+    QLineEdit, QScrollArea, QFrame, QListWidget,
 )
+from PySide6 import __version__ as QT_VERSION
 
 from engine import BokehEngine, EngineSettings, MODE_AI, MODE_MANUAL
 from depth_worker import (
@@ -25,10 +30,16 @@ from depth_worker import (
     imported_models, add_imported_model, normalize_repo, is_complete_model_dir,
     is_local_ref,
 )
+from eventlog import (
+    EventLog, collect_device_profile, device_signature, timestamp,
+)
+from history import ActionHistory
 from theme import apply_theme, asset
 from version import __version__ as APP_VERSION
 
 APP_TITLE = "伯爵大光圈模拟"
+# 本次更新的主题标语：跟在界面版本号后面显示，版本号本身不变。
+APP_EDITION = "诗人革命"
 BRAND_LOGO = asset("brand", "logo-mark.png")
 APP_ICON = asset("brand", "app.ico")
 
@@ -289,59 +300,176 @@ class RenderWorker(QThread):
             self.wait(1000)
 
 
-class ImageCanvas(QLabel):
+class ZoomableCanvas(QLabel):
+    """预览画布基类：Ctrl+滚轮缩放、Ctrl+中键拖拽平移、双击复位。
+
+    缩放/平移只影响显示，不动像素数据；三种预览图（原图、效果图、深度图）
+    共用这套交互。普通滚轮不拦截，仍然交给外层滚动区。
+    """
+
+    MIN_ZOOM = 0.1
+    MAX_ZOOM = 20.0
+    ZOOM_HINT = "Ctrl+滚轮缩放 · Ctrl+中键拖拽平移 · 双击复位"
+
+    def __init__(self, placeholder=""):
+        super().__init__(placeholder)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setObjectName("PreviewSurface")
+        self._pixmap = None
+        self._zoom = 1.0
+        self._pan = QPointF(0.0, 0.0)
+        self._panning = False
+        self._pan_start = QPointF()
+        self._pan_origin = QPointF()
+        self._idle_cursor = self.cursor()
+        self.setToolTip(self.ZOOM_HINT)
+
+    # -- 数据 ---------------------------------------------------------------
+
+    def set_source_pixmap(self, pixmap, placeholder, keep_view=False):
+        """换图：默认重置缩放/平移；keep_view=True 时保留当前视图。
+
+        切换「显示原图」、刷新渲染结果都走 keep_view，这样放大看细节时视图不会跳回。
+        """
+        had_pixmap = self._pixmap is not None
+        self._pixmap = pixmap
+        if not (keep_view and had_pixmap):
+            self._zoom = 1.0
+            self._pan = QPointF(0.0, 0.0)
+        self.setText("" if pixmap is not None else placeholder)
+        self.setPixmap(QPixmap())
+        self.update()
+
+    def reset_view(self):
+        self._zoom = 1.0
+        self._pan = QPointF(0.0, 0.0)
+        self.update()
+
+    # -- 几何 ---------------------------------------------------------------
+
+    def _fit_rect(self):
+        """当前缩放/平移下，图片在控件里的目标矩形（逻辑坐标）。"""
+        if self._pixmap is None:
+            return None
+        pw, ph = self._pixmap.width(), self._pixmap.height()
+        if pw <= 0 or ph <= 0 or self.width() <= 0 or self.height() <= 0:
+            return None
+        scale = min(self.width() / pw, self.height() / ph) * self._zoom
+        width, height = pw * scale, ph * scale
+        return QRectF(
+            (self.width() - width) / 2.0 + self._pan.x(),
+            (self.height() - height) / 2.0 + self._pan.y(),
+            width, height,
+        )
+
+    def paintEvent(self, event):
+        super().paintEvent(event)  # 背景、边框、占位文字仍由 QLabel 画
+        rect = self._fit_rect()
+        if rect is None:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.drawPixmap(rect, self._pixmap, QRectF(self._pixmap.rect()))
+
+    # -- 交互 ---------------------------------------------------------------
+
+    def _zoom_at(self, anchor, factor):
+        """以 anchor 为锚点缩放：该点在图片上的相对位置保持不动。"""
+        before = self._fit_rect()
+        if before is None:
+            return False
+        target = float(np.clip(self._zoom * factor, self.MIN_ZOOM, self.MAX_ZOOM))
+        if abs(target - self._zoom) < 1e-6:
+            return False
+        rel_x = (anchor.x() - before.x()) / max(before.width(), 1e-6)
+        rel_y = (anchor.y() - before.y()) / max(before.height(), 1e-6)
+        self._zoom = target
+        after = self._fit_rect()
+        self._pan += QPointF(
+            anchor.x() - (after.x() + rel_x * after.width()),
+            anchor.y() - (after.y() + rel_y * after.height()),
+        )
+        self.update()
+        return True
+
+    def wheelEvent(self, event):
+        if self._pixmap is None or not (
+            event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
+            event.ignore()  # 不拦普通滚轮
+            return
+        delta = event.angleDelta().y()
+        if delta:
+            self._zoom_at(event.position(), 1.25 ** (delta / 120.0))
+        event.accept()
+
+    def mousePressEvent(self, event):
+        if (
+            self._pixmap is not None
+            and event.button() == Qt.MouseButton.MiddleButton
+            and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
+            self._panning = True
+            self._pan_start = QPointF(event.position())
+            self._pan_origin = QPointF(self._pan)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._panning:
+            self._pan = self._pan_origin + (event.position() - self._pan_start)
+            self.update()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._panning and event.button() == Qt.MouseButton.MiddleButton:
+            self._panning = False
+            self.setCursor(self._idle_cursor)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if self._pixmap is not None and (
+            self._zoom != 1.0 or self._pan != QPointF(0.0, 0.0)
+        ):
+            self.reset_view()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+
+class ImageCanvas(ZoomableCanvas):
     clicked = Signal(float, float)
 
     def __init__(self):
         super().__init__("打开一张图片开始")
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumSize(360, 240)
-        self.setObjectName("PreviewSurface")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._pixmap = None
-        self._display_size = None
+        self._idle_cursor = Qt.CursorShape.PointingHandCursor
 
-    def set_image(self, image):
+    def set_image(self, image, keep_view=False):
         if image is None:
-            self._pixmap = None
-            self._display_size = None
-            self.setText("打开一张图片开始")
+            self.set_source_pixmap(None, "打开一张图片开始")
             return
         h, w, ch = image.shape
-        fmt = QImage.Format.Format_RGB888
-        qimg = QImage(image.data, w, h, ch * w, fmt).copy()
-        self._pixmap = QPixmap.fromImage(qimg)
-        self._refresh()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._refresh()
-
-    def _refresh(self):
-        if not self._pixmap:
-            return
-        dpr = self.devicePixelRatioF()
-        target_w = max(1, int(self.width() * dpr))
-        target_h = max(1, int(self.height() * dpr))
-        scaled = self._pixmap.scaled(
-            target_w, target_h,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+        qimg = QImage(image.data, w, h, ch * w, QImage.Format.Format_RGB888).copy()
+        self.set_source_pixmap(
+            QPixmap.fromImage(qimg), "打开一张图片开始", keep_view=keep_view
         )
-        scaled.setDevicePixelRatio(dpr)
-        self.setPixmap(scaled)
-        self._display_size = (scaled.width() / dpr, scaled.height() / dpr)
 
     def mousePressEvent(self, event):
-        if (self._pixmap is not None and self._display_size is not None
-                and event.button() == Qt.MouseButton.LeftButton):
-            dw, dh = self._display_size
-            ox = (self.width() - dw) / 2.0
-            oy = (self.height() - dh) / 2.0
-            x = (event.position().x() - ox) / max(dw, 1.0)
-            y = (event.position().y() - oy) / max(dh, 1.0)
-            if 0.0 <= x <= 1.0 and 0.0 <= y <= 1.0:
-                self.clicked.emit(x, y)
+        if self._pixmap is not None and event.button() == Qt.MouseButton.LeftButton:
+            rect = self._fit_rect()
+            if rect is not None and rect.width() > 0 and rect.height() > 0:
+                x = (event.position().x() - rect.x()) / rect.width()
+                y = (event.position().y() - rect.y()) / rect.height()
+                if 0.0 <= x <= 1.0 and 0.0 <= y <= 1.0:
+                    self.clicked.emit(x, y)
         super().mousePressEvent(event)
 
 
@@ -385,46 +513,115 @@ def safe_stem(path):
     return cleaned.strip(" .") or "深度图"
 
 
-class DepthPreview(QLabel):
+def reveal_in_explorer(path):
+    """导出完成后在资源管理器里定位并选中该文件；返回是否成功唤起。
+
+    用 explorer.exe 的绝对路径（不依赖 PATH，冻结成 exe 后也可靠），
+    失败时退回 QDesktopServices 打开所在文件夹，不再静默吞掉错误。
+    """
+    if not sys.platform.startswith("win"):
+        return False
+    target = Path(path)
+    if target.exists():
+        explorer = Path(os.environ.get("WINDIR", r"C:\Windows")) / "explorer.exe"
+        try:
+            subprocess.Popen([str(explorer), f"/select,{target}"])
+            return True
+        except OSError:
+            pass
+    try:
+        return bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(target.parent))))
+    except Exception:
+        return False
+
+
+class DepthPreview(ZoomableCanvas):
     """Small always-visible preview of the current depth map."""
 
     def __init__(self):
         super().__init__("尚无深度图")
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumHeight(110)
-        self.setObjectName("PreviewSurface")
-        self._pixmap = None
 
     def set_depth(self, depth):
         if depth is None:
-            self._pixmap = None
-            self.setPixmap(QPixmap())
-            self.setText("尚无深度图")
+            self.set_source_pixmap(None, "尚无深度图")
             return
         normalised = np.clip(np.asarray(depth, dtype=np.float32), 0.0, 1.0)
         gray = np.ascontiguousarray((normalised * 255.0).astype(np.uint8))
         h, w = gray.shape
         image = QImage(gray.data, w, h, w, QImage.Format.Format_Grayscale8).copy()
-        self._pixmap = QPixmap.fromImage(image)
-        self.setText("")
-        self._refresh()
+        self.set_source_pixmap(QPixmap.fromImage(image), "尚无深度图")
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._refresh()
 
-    def _refresh(self):
-        if self._pixmap is None:
+class HistogramPlot(QWidget):
+    """自绘的 256 档亮度直方图（数据来自当前预览图）。"""
+
+    def __init__(self):
+        super().__init__()
+        self.setMinimumHeight(88)
+        self.setObjectName("HistogramPlot")
+        self._counts = None
+
+    def set_image(self, image):
+        if image is None:
+            self._counts = None
+        else:
+            gray = cv2.cvtColor(
+                np.ascontiguousarray(image[:, :, :3]), cv2.COLOR_RGB2GRAY
+            )
+            self._counts = cv2.calcHist([gray], [0], None, [256], [0, 256]).ravel()
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), self.palette().color(self.backgroundRole()))
+        if self._counts is None or float(self._counts.max()) <= 0:
             return
-        dpr = self.devicePixelRatioF()
-        scaled = self._pixmap.scaled(
-            max(1, int(self.width() * dpr)),
-            max(1, int(self.height() * dpr)),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        scaled.setDevicePixelRatio(dpr)
-        self.setPixmap(scaled)
+        width, height = self.width(), self.height()
+        peak = float(self._counts.max())
+        bar = self.palette().color(self.foregroundRole())
+        bar.setAlpha(210)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(bar)
+        for index in range(256):
+            scaled = (float(self._counts[index]) / peak) * max(height - 2.0, 1.0)
+            if scaled <= 0.0:
+                continue
+            x0 = int(index * width / 256)
+            x1 = max(x0 + 1, int((index + 1) * width / 256))
+            painter.drawRect(x0, int(height - scaled), x1 - x0, int(scaled))
+
+
+class HistogramPanel(QWidget):
+    """直方图面板：右上角 −/+ 折叠或展开。"""
+
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        header = QHBoxLayout()
+        title = QLabel("亮度分布")
+        title.setProperty("role", "hint")
+        header.addWidget(title)
+        header.addStretch()
+        self.toggle_btn = QPushButton("−")
+        self.toggle_btn.setFixedSize(24, 22)
+        self.toggle_btn.setToolTip("折叠 / 展开直方图")
+        self.toggle_btn.clicked.connect(self.toggle_collapsed)
+        header.addWidget(self.toggle_btn)
+        layout.addLayout(header)
+        self.plot = HistogramPlot()
+        layout.addWidget(self.plot)
+        self._collapsed = False
+
+    def toggle_collapsed(self):
+        self._collapsed = not self._collapsed
+        self.plot.setVisible(not self._collapsed)
+        self.toggle_btn.setText("+" if self._collapsed else "−")
+
+    def set_image(self, image):
+        self.plot.set_image(image)
 
 
 class ExportDialog(QDialog):
@@ -625,12 +822,49 @@ class ModelImportDialog(QDialog):
         return (None, "", name)
 
 
+# 参与"操作记录"的控件：(属性名, "value" 取值 / "index" 取选项下标 / "checked" 取勾选)
+_HISTORY_WIDGETS = (
+    ("aperture", "index"),
+    ("blur_slider", "value"),
+    ("bokeh_slider", "value"),
+    ("bokeh_shape", "index"),
+    ("bokeh_density", "value"),
+    ("bokeh_size", "value"),
+    ("spherical_slider", "value"),
+    ("cat_eye_slider", "value"),
+    ("highlight_check", "checked"),
+    ("highlight_slider", "value"),
+    ("focus_slider", "value"),
+    ("depth_strength", "value"),
+    ("subject_expand_slider", "value"),
+    ("subject_feather_slider", "value"),
+    ("preview_scale", "index"),
+    ("depth_mode", "index"),
+    ("depth_size", "index"),
+    ("model_combo", "index"),
+)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"{APP_TITLE}  v{APP_VERSION}")
+        self.setWindowTitle(f"{APP_TITLE}  v{APP_VERSION} · {APP_EDITION}")
         self.resize(1280, 800)
         self.engine = BokehEngine()
+        # 事件日志：每次处理的参数、耗时与设备信息都写进 logs/，方便排查问题。
+        self.event_log = EventLog(settings_path().parent / "logs")
+        self._render_started = None
+        self._ai_started = None
+        self.event_log.log(
+            "app.start",
+            session=self.event_log.session,
+            version=APP_VERSION,
+            frozen=getattr(sys, "frozen", False),
+            python=sys.version.split()[0],
+            qt=QT_VERSION,
+            backend=self.engine.backend_description,
+            log=str(self.event_log.path),
+        )
         self.original = None
         self.original_full = None
         self.processed = None
@@ -682,8 +916,10 @@ class MainWindow(QMainWindow):
         canvases = QSplitter(Qt.Orientation.Horizontal)
         self.before_canvas = ImageCanvas()
         self.after_canvas = ImageCanvas()
-        self.before_canvas.setToolTip("原图预览")
-        self.after_canvas.setToolTip("效果预览（点击可设置焦点）")
+        self.before_canvas.setToolTip(f"原图预览 · {ZoomableCanvas.ZOOM_HINT}")
+        self.after_canvas.setToolTip(
+            f"效果预览（点击可设置焦点）· {ZoomableCanvas.ZOOM_HINT}"
+        )
         self.before_canvas.clicked.connect(self.on_canvas_clicked)
         self.after_canvas.clicked.connect(self.on_canvas_clicked)
 
@@ -778,6 +1014,23 @@ class MainWindow(QMainWindow):
         )
         self.cat_eye_value.setText("0")
         camera_form.addRow("猫眼压缩", self.slider_row(self.cat_eye_slider, self.cat_eye_value))
+        self.highlight_check = QCheckBox("高光溢出补偿")
+        self.highlight_check.setToolTip(
+            "勾选后，比阈值更亮的光源，其散景光斑按比例降低不透明度，"
+            "避免过亮处多个光斑叠加成一片纯白。"
+        )
+        self.highlight_check.toggled.connect(self.on_settings_changed)
+        camera_form.addRow(self.highlight_check)
+        self.highlight_slider, self.highlight_value = self.make_slider(0, 100, 80)
+        self.highlight_slider.valueChanged.connect(self.on_settings_changed)
+        self.highlight_slider.setToolTip(
+            "高光阈值：亮度超过该值（0–100，对应 0–255 的亮度）才算高光，"
+            "越亮的光斑压得越透明。默认 80。"
+        )
+        self.highlight_value.setText("80")
+        camera_form.addRow(
+            "高光阈值", self.slider_row(self.highlight_slider, self.highlight_value)
+        )
         controls_layout.addWidget(camera_box)
 
         depth_box = QGroupBox("景深与主体")
@@ -868,14 +1121,48 @@ class MainWindow(QMainWindow):
         self.preview_scale.addItems(["快速预览（最长边 1000px）", "标准预览（最长边 1400px）", "高质量预览（原尺寸）"])
         self.preview_scale.currentIndexChanged.connect(self.reload_preview_size)
         output_form.addRow("预览质量", self.preview_scale)
-        self.gpu_label = QLabel(self.engine.backend_description)
-        self.gpu_label.setWordWrap(True)
-        self.gpu_label.setProperty("role", "status")
-        output_form.addRow("计算后端", self.gpu_label)
-        self.version_label = QLabel(f"v{APP_VERSION}")
+        self.range_check = QCheckBox("显示效果范围（红色高亮被改动的区域）")
+        self.range_check.setToolTip(
+            "仅影响预览：把被虚化或光斑改动过的像素用半透明红色标出，"
+            "方便检查效果边界；导出文件不受影响。"
+        )
+        self.range_check.toggled.connect(self.refresh_display)
+        output_form.addRow(self.range_check)
+        self.report_btn = QPushButton("导出使用报告")
+        self.report_btn.setToolTip(
+            "把运行日志与设备信息（CPU / 内存 / 显卡 / 驱动等）导出成一个 txt，"
+            "方便发给开发者排查问题。\n"
+            f"当前计算后端：{self.engine.backend_description}"
+        )
+        self.report_btn.clicked.connect(self.export_usage_report)
+        output_form.addRow("使用报告", self.report_btn)
+        self.version_label = QLabel(f"v{APP_VERSION} · {APP_EDITION}")
         self.version_label.setProperty("role", "status")
         output_form.addRow("版本", self.version_label)
         controls_layout.addWidget(output_box)
+
+        hist_box = QGroupBox("直方图")
+        hist_layout = QVBoxLayout(hist_box)
+        self.histogram = HistogramPanel()
+        hist_layout.addWidget(self.histogram)
+        controls_layout.addWidget(hist_box)
+
+        log_box = QGroupBox("操作记录（Ctrl+Z 撤销 / Ctrl+Y 恢复）")
+        log_layout = QVBoxLayout(log_box)
+        self.log_list = QListWidget()
+        self.log_list.setObjectName("ActionLog")
+        self.log_list.setMaximumHeight(150)
+        self.log_list.itemClicked.connect(self.on_log_clicked)
+        log_layout.addWidget(self.log_list)
+        log_buttons = QHBoxLayout()
+        self.undo_btn = QPushButton("撤销 Ctrl+Z")
+        self.undo_btn.clicked.connect(self.undo)
+        self.redo_btn = QPushButton("恢复 Ctrl+Y")
+        self.redo_btn.clicked.connect(self.redo)
+        log_buttons.addWidget(self.undo_btn)
+        log_buttons.addWidget(self.redo_btn)
+        log_layout.addLayout(log_buttons)
+        controls_layout.addWidget(log_box)
         controls_layout.addStretch()
 
         note = QLabel("提示：Small 已内置，Base/Large 首次使用会自动下载。也可导入现成深度图，或直接使用中心对焦。")
@@ -922,12 +1209,215 @@ class MainWindow(QMainWindow):
         save_action.triggered.connect(self.export_image)
         self.addAction(save_action)
 
+        # -- 操作记录 / 撤销重做（本次更新主题："快捷键革命"） ----------------
+        self.history = ActionHistory()
+        self._history_ready = False
+        self._suppress_history = False
+        self._pending_label = "调整参数"
+        self._history_timer = QTimer(self)
+        self._history_timer.setSingleShot(True)
+        self._history_timer.setInterval(400)
+        self._history_timer.timeout.connect(self._commit_history)
+        self._control_labels = {
+            self.aperture: "调整 模拟光圈",
+            self.blur_slider: "调整 虚化强度",
+            self.bokeh_slider: "调整 光斑强度",
+            self.bokeh_shape: "调整 光斑形状",
+            self.bokeh_density: "调整 光斑密度",
+            self.bokeh_size: "调整 光斑大小",
+            self.spherical_slider: "调整 球差",
+            self.cat_eye_slider: "调整 猫眼压缩",
+            self.highlight_check: "切换 高光溢出补偿",
+            self.highlight_slider: "调整 高光阈值",
+            self.focus_slider: "调整 焦点深度",
+            self.depth_strength: "调整 景深分离",
+            self.keep_subject: "切换 保护主体",
+            self.subject_expand_slider: "调整 主体边缘",
+            self.subject_feather_slider: "调整 主体羽化",
+            self.preview_scale: "切换 预览质量",
+            self.depth_mode: "切换 对焦模式",
+            self.depth_size: "切换 深度图分辨率",
+            self.model_combo: "切换 AI 模型",
+        }
+
+        undo_action = QAction("撤销", self)
+        undo_action.setShortcut("Ctrl+Z")
+        undo_action.triggered.connect(self.undo)
+        self.addAction(undo_action)
+        redo_action = QAction("恢复", self)
+        redo_action.setShortcuts(["Ctrl+Y", "Ctrl+Shift+Z"])
+        redo_action.triggered.connect(self.redo)
+        self.addAction(redo_action)
+
         # Restore the previous session's settings once every widget exists.
         self._load_config()
+        self._history_ready = True
+        self.history.reset("初始状态", self._snapshot(), self._signature())
+        self._refresh_log()
+        # 设备档案延迟到窗口出现后再采集（要查显卡/驱动，别拖慢启动）。
+        QTimer.singleShot(1200, self.log_device_profile)
 
     def _refresh_action_roles(self):
         """空状态禁用导出；有图后启用。按钮角色由 variant 固定，不随状态变。"""
         self.export_btn.setEnabled(self.original_full is not None)
+
+    # -- 操作记录 / 撤销重做（Ctrl+Z / Ctrl+Y） ----------------------------
+
+    def _control_label(self):
+        return self._control_labels.get(self.sender(), "调整参数")
+
+    def _snapshot(self):
+        """记录一份完整状态：控件取值 + 数据引用（不复制像素）。"""
+        state = {}
+        for name, kind in _HISTORY_WIDGETS:
+            widget = getattr(self, name)
+            if kind == "index":
+                state[name] = widget.currentIndex()
+            elif kind == "checked":
+                state[name] = widget.isChecked()
+            else:
+                state[name] = widget.value()
+        state["protect_subject"] = self.keep_subject.isChecked()
+        state["image_path"] = self.image_path
+        state["original"] = self.original
+        state["original_full"] = self.original_full
+        state["depth"] = self.depth
+        state["depth_full"] = self._depth_full
+        state["depth_name"] = self._depth_name
+        return state
+
+    def _signature(self):
+        """轻量指纹，用来判断"状态是不是真变了"。"""
+        parts = []
+        for name, kind in _HISTORY_WIDGETS:
+            widget = getattr(self, name)
+            if kind == "index":
+                parts.append(widget.currentIndex())
+            elif kind == "checked":
+                parts.append(widget.isChecked())
+            else:
+                parts.append(widget.value())
+        parts.append(self.keep_subject.isChecked())
+        parts.append(self.image_path)
+        parts.append(id(self.original_full))
+        parts.append(id(self._depth_full))
+        parts.append(id(self.depth))
+        parts.append(self._depth_name)
+        return tuple(parts)
+
+    def _record(self, label, immediate=False):
+        """记一次操作；滑块拖动由 400ms 定时器合并为"一次"操作。"""
+        if not self._history_ready or self._suppress_history:
+            return
+        self._pending_label = label
+        if immediate:
+            self._commit_history()
+        else:
+            self._history_timer.start()
+
+    def _commit_history(self):
+        if not self._history_ready or self._suppress_history:
+            return
+        if self.history.push(self._pending_label, self._snapshot(), self._signature()):
+            self.event_log.log(
+                "ui.action", action=self._pending_label, params=asdict(self.settings())
+            )
+            self._refresh_log()
+
+    def _refresh_log(self):
+        self.log_list.blockSignals(True)
+        self.log_list.clear()
+        for position, label in enumerate(self.history.labels(), start=1):
+            self.log_list.addItem(f"{position}. {label}")
+        if self.history.index >= 0:
+            self.log_list.setCurrentRow(self.history.index)
+        self.log_list.blockSignals(False)
+        self.undo_btn.setEnabled(self.history.can_undo)
+        self.redo_btn.setEnabled(self.history.can_redo)
+
+    def _apply_history(self, label, state):
+        self._suppress_history = True
+        try:
+            self._restore(state)
+        finally:
+            self._suppress_history = False
+        self.statusBar().showMessage(f"已回到：{label}", 3000)
+        self._refresh_log()
+
+    def undo(self):
+        entry = self.history.undo()
+        if entry is None:
+            self.statusBar().showMessage("没有可撤销的操作", 3000)
+            return
+        self.event_log.log("history.undo", label=entry[0])
+        self._apply_history(*entry)
+
+    def redo(self):
+        entry = self.history.redo()
+        if entry is None:
+            self.statusBar().showMessage("没有可恢复的操作", 3000)
+            return
+        self.event_log.log("history.redo", label=entry[0])
+        self._apply_history(*entry)
+
+    def on_log_clicked(self, item):
+        """点日志列表里的某一步，直接跳回那一步的状态。"""
+        row = self.log_list.row(item)
+        if row == self.history.index:
+            return
+        entry = self.history.goto(row)
+        if entry is not None:
+            self._apply_history(*entry)
+
+    def _restore(self, state):
+        for name, kind in _HISTORY_WIDGETS:
+            widget = getattr(self, name)
+            value = state.get(name)
+            widget.blockSignals(True)
+            if value is not None:
+                if kind == "index":
+                    if 0 <= value < widget.count():
+                        widget.setCurrentIndex(value)
+                elif kind == "checked":
+                    widget.setChecked(bool(value))
+                else:
+                    widget.setValue(value)
+            widget.blockSignals(False)
+        self.keep_subject.blockSignals(True)
+        self.keep_subject.setChecked(bool(state.get("protect_subject", True)))
+        self.keep_subject.blockSignals(False)
+
+        self.image_path = state.get("image_path")
+        self.original_full = state.get("original_full")
+        self._depth_full = state.get("depth_full")
+        self._depth_name = state.get("depth_name")
+        self.depth = state.get("depth")
+        self._ai_generation += 1
+        self.ai_btn.setText("运行 AI 深度估算")
+
+        if self.original_full is None:
+            self.original = None
+            self.processed = None
+            self.depth = None
+            self.before_canvas.set_image(None)
+            self.after_canvas.set_image(None)
+            self.depth_preview.set_depth(None)
+            self.setWindowTitle(f"{APP_TITLE}  v{APP_VERSION} · {APP_EDITION}")
+            self.status_label.setText(self.engine.backend_description)
+        else:
+            # 先按当前预览质量重建预览图与深度，再补回记录里的那份深度。
+            self.reload_preview_size()
+            recorded_depth = state.get("depth")
+            if (recorded_depth is not None and self.original is not None
+                    and recorded_depth.shape[:2] == self.original.shape[:2]):
+                self.depth = recorded_depth
+                self.depth_preview.set_depth(self.depth)
+                self.ai_hint.setText("已按操作记录恢复深度图。")
+            self.setWindowTitle(
+                f"{APP_TITLE}  v{APP_VERSION} · {APP_EDITION} · {Path(self.image_path).name}"
+            )
+        self._refresh_action_roles()
+        self.on_settings_changed()
 
     # -- 配置记忆：下次打开继承上次设置 ------------------------------------
 
@@ -973,6 +1463,12 @@ class MainWindow(QMainWindow):
         self.subject_feather_slider.setValue(
             as_int("subject_feather", self.subject_feather_slider.value())
         )
+        self.highlight_check.setChecked(
+            self._as_bool(store.value("highlight_rolloff"), False)
+        )
+        self.highlight_slider.setValue(
+            as_int("highlight_threshold", self.highlight_slider.value())
+        )
         self.preview_scale.setCurrentIndex(
             as_int("preview_scale", self.preview_scale.currentIndex())
         )
@@ -1008,6 +1504,8 @@ class MainWindow(QMainWindow):
         store.setValue("protect_subject", self.keep_subject.isChecked())
         store.setValue("subject_expand", self.subject_expand_slider.value())
         store.setValue("subject_feather", self.subject_feather_slider.value())
+        store.setValue("highlight_rolloff", self.highlight_check.isChecked())
+        store.setValue("highlight_threshold", self.highlight_slider.value())
         store.setValue("preview_scale", self.preview_scale.currentIndex())
         store.setValue("depth_mode", self.depth_mode.currentIndex())
         store.setValue("depth_size_index", self.depth_size.currentIndex())
@@ -1106,14 +1604,23 @@ class MainWindow(QMainWindow):
         self.original_full = image
         self._depth_full = None
         self._depth_name = None
+        self.processed = None
         self.depth_preview.set_depth(None)
         self.compare_btn.setChecked(False)
         self.reload_preview_size()
-        self.setWindowTitle(f"{APP_TITLE}  v{APP_VERSION} · {Path(path).name}")
+        self.setWindowTitle(
+            f"{APP_TITLE}  v{APP_VERSION} · {APP_EDITION} · {Path(path).name}"
+        )
         self._refresh_action_roles()
         self.statusBar().showMessage(
             f"已打开：{Path(path).name}（{image.shape[1]}×{image.shape[0]}）", 4000
         )
+        self.event_log.log(
+            "image.open", path=str(path),
+            size=f"{image.shape[1]}x{image.shape[0]}",
+            preview=self.preview_scale.currentText(),
+        )
+        self._record("打开图片", immediate=True)
 
     def reload_preview_size(self, *_):
         if self.original_full is None:
@@ -1146,6 +1653,8 @@ class MainWindow(QMainWindow):
 
         self.depth_preview.set_depth(self.depth)
         self.before_canvas.set_image(self.original)
+        self.update_histogram()
+        self._record("切换 预览质量")
         self.render()
 
     def settings(self):
@@ -1164,7 +1673,100 @@ class MainWindow(QMainWindow):
             cat_eye=self.cat_eye_slider.value() / 100.0,
             subject_expand=self.subject_expand_slider.value() / 100.0,
             subject_feather=self.subject_feather_slider.value() / 100.0,
+            highlight_rolloff=self.highlight_check.isChecked(),
+            highlight_threshold=self.highlight_slider.value() / 100.0,
         )
+
+    # -- 预览显示（效果范围高亮 / 直方图） ----------------------------------
+
+    def _effect_mask(self):
+        """被效果改动过的像素遮罩（只用于预览，不参与导出）。"""
+        if self.processed is None or self.original is None:
+            return None
+        if self.processed.shape[:2] != self.original.shape[:2]:
+            return None
+        diff = np.abs(
+            self.processed.astype(np.int16) - self.original.astype(np.int16)
+        ).max(axis=2)
+        return diff > 3
+
+    def _display_image(self):
+        """效果预览显示的图：可选叠加半透明红色标出效果范围。"""
+        base = self.original if self.compare_btn.isChecked() else self.processed
+        if base is None or not self.range_check.isChecked():
+            return base
+        mask = self._effect_mask()
+        if mask is None or not mask.any():
+            return base
+        tinted = base.astype(np.float32)  # copy：不污染 self.processed
+        tinted[mask] = tinted[mask] * 0.5 + np.array([255.0, 40.0, 40.0]) * 0.5
+        return tinted.astype(np.uint8)
+
+    def refresh_display(self, *_):
+        """刷新效果预览（保持缩放/平移）并同步直方图。"""
+        self.after_canvas.set_image(self._display_image(), keep_view=True)
+        self.update_histogram()
+
+    def update_histogram(self, *_):
+        self.histogram.set_image(
+            self.processed if self.processed is not None else self.original
+        )
+
+    # -- 日志与使用报告 ------------------------------------------------------
+
+    def _device_profile(self):
+        profile = collect_device_profile()
+        profile["qt"] = QT_VERSION
+        profile["backend"] = self.engine.backend_description
+        return profile
+
+    def log_device_profile(self):
+        """启动后记一次设备档案；与上次不同（换了机器）时记完整信息。"""
+        profile = self._device_profile()
+        signature = device_signature(profile)
+        store = self._store()
+        previous = str(store.value("device_signature") or "")
+        if previous != signature:
+            self.event_log.log(
+                "device.profile", changed=bool(previous), signature=signature,
+                **profile,
+            )
+            store.setValue("device_signature", signature)
+            store.sync()
+        else:
+            self.event_log.log("device.same", signature=signature)
+
+    def export_usage_report(self):
+        """设备信息 + 事件日志拼成一个 txt，方便用户发给开发者。"""
+        profile = self._device_profile()
+        lines = [
+            "伯爵大光圈模拟 · 使用报告",
+            f"版本：v{APP_VERSION}",
+            f"生成时间：{timestamp()}",
+            f"日志文件：{self.event_log.path}",
+            "",
+            "== 设备与运行环境 ==",
+        ]
+        lines += [f"{key}: {value}" for key, value in profile.items()]
+        lines += [
+            "",
+            "== 事件日志（时间 / 处理参数 / 耗时）==",
+            self.event_log.read_all() or "（本次还没有日志）",
+        ]
+        target = self.event_log.directory / f"使用报告-{time.strftime('%Y%m%d-%H%M%S')}.txt"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except OSError as exc:
+            self.event_log.log("report.error", error=str(exc))
+            QMessageBox.critical(self, "导出失败", f"写不了报告文件：\n{exc}")
+            return
+        self.event_log.log("report.export", path=str(target))
+        QMessageBox.information(
+            self, "使用报告已导出",
+            f"报告已保存到：\n{target}\n\n把它发给开发者即可（含设备信息与处理日志）。"
+        )
+        reveal_in_explorer(str(target))
 
     def on_settings_changed(self, *_):
         for slider, label in [
@@ -1176,7 +1778,8 @@ class MainWindow(QMainWindow):
             (self.spherical_slider, self.spherical_value),
             (self.cat_eye_slider, self.cat_eye_value),
             (self.subject_expand_slider, self.subject_expand_value),
-            (self.subject_feather_slider, self.subject_feather_value)
+            (self.subject_feather_slider, self.subject_feather_value),
+            (self.highlight_slider, self.highlight_value)
         ]:
             label.setText(str(slider.value()))
         self.bokeh_size_value.setText(f"{self.bokeh_size.value()}%")
@@ -1186,6 +1789,7 @@ class MainWindow(QMainWindow):
         ):
             value = slider.value()
             label.setText(f"+{value}" if value > 0 else str(value))
+        self._record(self._control_label())
         self.schedule_render()
 
     def schedule_render(self, *_):
@@ -1197,6 +1801,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 "深度图分辨率已更改，将在下次运行 AI 深度估算时生效。", 4000
             )
+        self._record("切换 深度图分辨率")
 
     def on_depth_mode_changed(self, *_):
         mode = self.depth_mode.currentIndex()
@@ -1204,6 +1809,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("深度图尚未生成或导入：当前预览使用中心对焦。", 6000)
         elif mode == MODE_MANUAL:
             self.statusBar().showMessage("点击预览中的主体位置，即可把焦点设到该处。", 6000)
+        self._record("切换 对焦模式")
         self.schedule_render()
 
     def on_canvas_clicked(self, x, y):
@@ -1226,16 +1832,12 @@ class MainWindow(QMainWindow):
         self.focus_slider.blockSignals(False)
         self.focus_value.setText(str(self.focus_slider.value()))
         self.statusBar().showMessage(f"焦点深度已设为 {self.focus_slider.value()}（点击位置）", 3000)
+        self._record("点击设置焦点", immediate=True)
         self.render()
 
     def toggle_original(self, checked):
-        if self.original is None:
-            self.after_canvas.set_image(None)
-            return
-        if checked:
-            self.after_canvas.set_image(self.original)
-        else:
-            self.after_canvas.set_image(self.processed if self.processed is not None else self.original)
+        # 切换对比保持缩放/平移（keep_view）：放大看细节时视图不会跳回全图。
+        self.refresh_display()
 
     def render(self, *_):
         self._render_timer.stop()
@@ -1243,12 +1845,23 @@ class MainWindow(QMainWindow):
             return
         mode = self.depth_mode.currentIndex()
         depth = self.depth if mode in (MODE_AI, MODE_MANUAL) and self.depth is not None else None
+        self.statusBar().showMessage("正在处理中…", 0)
+        self._render_started = time.monotonic()
+        self.event_log.log(
+            "render.request",
+            image=f"{self.original.shape[1]}x{self.original.shape[0]}",
+            mode=mode,
+            depth="yes" if depth is not None else "none",
+            preview=self.preview_scale.currentIndex(),
+            params=asdict(self.settings()),
+        )
         try:
             self._preview_job = self.render_worker.submit(
                 self.original, depth, self.settings(), mode=mode, kind="preview"
             )
         except Exception as exc:
             self.statusBar().showMessage(f"渲染失败：{exc}", 6000)
+            self.event_log.log("render.error", error=str(exc))
 
     def on_render_finished(self, payload):
         """Show a finished preview; exports are handled by their own waiter."""
@@ -1257,12 +1870,19 @@ class MainWindow(QMainWindow):
             return
         if error is not None:
             self.statusBar().showMessage(f"渲染失败：{error}", 6000)
+            self.event_log.log("render.error", error=str(error))
             return
+        elapsed = time.monotonic() - self._render_started if self._render_started else 0.0
+        self._render_started = None
         self.processed = result
-        self.after_canvas.set_image(
-            self.original if self.compare_btn.isChecked() else result
-        )
+        self.refresh_display()
         self.status_label.setText(self.engine.backend_description)
+        self.statusBar().showMessage(f"处理完成 · 用时 {elapsed:.2f}s", 4000)
+        self.event_log.log(
+            "render.done",
+            out=f"{result.shape[1]}x{result.shape[0]}",
+            elapsed=round(elapsed, 3),
+        )
 
     def _run_render_job(self, image, depth, settings, mode,
                         kind="export", return_layers=False):
@@ -1336,7 +1956,12 @@ class MainWindow(QMainWindow):
         self.import_depth_btn.setEnabled(False)
         self.depth_size.setEnabled(False)
         self.ai_hint.setText(f"正在准备模型：{model_label(model_id)}…")
-        self.statusBar().showMessage("正在估算深度，请稍候…")
+        self.statusBar().showMessage("正在处理中… AI 深度估算", 0)
+        self._ai_started = time.monotonic()
+        self.event_log.log(
+            "ai.start", model=model_id, resolution=self.depth_size.currentText(),
+            image=f"{self.original.shape[1]}x{self.original.shape[0]}",
+        )
         worker.start()
 
     def ai_progress(self, text, worker):
@@ -1391,6 +2016,11 @@ class MainWindow(QMainWindow):
 
         self.ai_btn.setText("运行 AI 深度估算")
         self.ai_hint.setText(f"已导入深度图：{name}；点击预览可微调焦点。")
+        self.event_log.log(
+            "depth.import", name=str(name),
+            size=f"{self.depth.shape[1]}x{self.depth.shape[0]}",
+        )
+        self._record("导入深度图", immediate=True)
         self.render()
 
     def export_depth(self):
@@ -1416,6 +2046,9 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
+        self.statusBar().showMessage("正在处理中… 导出深度图", 0)
+        QApplication.processEvents()
+        started = time.monotonic()
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             ext = os.path.splitext(path)[1].lower()
@@ -1442,11 +2075,20 @@ class MainWindow(QMainWindow):
                 )
             save_depth_map(path, depth, ext)
             bits = "16 位" if ext in (".png", ".tif", ".tiff") else "8 位"
+            elapsed = time.monotonic() - started
+            self.event_log.log(
+                "export.depth", path=str(path), bits=bits, out=f"{w}x{h}",
+                elapsed=round(elapsed, 3),
+            )
+            self.statusBar().showMessage(f"导出完成 · 用时 {elapsed:.2f}s", 4000)
             QMessageBox.information(
                 self, "导出完成",
                 f"已导出{bits}深度图：\n{path}\n分辨率：{w}×{h}"
             )
+            if not reveal_in_explorer(path):
+                self.statusBar().showMessage("已导出，但未能自动打开文件夹。", 6000)
         except PermissionError as exc:
+            self.event_log.log("export.error", kind="permission", path=str(path))
             QMessageBox.critical(
                 self, "导出失败",
                 "没有写入权限：\n" + str(path) + "\n\n"
@@ -1455,6 +2097,7 @@ class MainWindow(QMainWindow):
                 + str(exc)
             )
         except Exception as exc:
+            self.event_log.log("export.error", error=str(exc))
             QMessageBox.critical(self, "导出失败", str(exc))
 
     def _auto_focus(self, depth):
@@ -1512,7 +2155,14 @@ class MainWindow(QMainWindow):
             f"已用 {model_label(worker.model_id)} 生成深度图；"
             "焦点已自动对准画面中部，可点击预览微调。"
         )
-        self.statusBar().showMessage("AI 深度估算完成。", 5000)
+        elapsed = time.monotonic() - self._ai_started if self._ai_started else 0.0
+        self._ai_started = None
+        self.statusBar().showMessage(f"处理完成 · 用时 {elapsed:.2f}s", 5000)
+        self.event_log.log(
+            "ai.done", out=f"{self.depth.shape[1]}x{self.depth.shape[0]}",
+            elapsed=round(elapsed, 3),
+        )
+        self._record("运行 AI 深度估算", immediate=True)
         self.render()
 
     def ai_failed(self, message, worker):
@@ -1533,6 +2183,7 @@ class MainWindow(QMainWindow):
             self.ai_hint.setText("本次估算失败，继续使用上一次的深度图。")
         else:
             self.ai_hint.setText("未生成深度图，继续使用中心对焦。")
+        self.event_log.log("ai.fail", error=str(message)[:300])
         QMessageBox.warning(self, "AI 深度估算不可用", message)
 
     def export_image(self):
@@ -1611,7 +2262,13 @@ class MainWindow(QMainWindow):
             settings = self.settings()
             settings.bokeh_aa = int(options["aa"])
 
-            self.statusBar().showMessage(f"正在导出 {out_w}×{out_h}…", 0)
+            self.statusBar().showMessage(f"正在处理中… 导出 {out_w}×{out_h}", 0)
+            started = time.monotonic()
+            self.event_log.log(
+                "export.request", path=str(path), format=fmt, scale=scale,
+                aa=int(options["aa"]), quality=int(options["quality"]), layer=layer,
+                out=f"{out_w}x{out_h}", mode=mode, params=asdict(settings),
+            )
 
             out = self._run_render_job(
                 work_image, depth, settings, mode,
@@ -1627,14 +2284,23 @@ class MainWindow(QMainWindow):
                 )
                 note = ""
 
+            elapsed = time.monotonic() - started
+            self.event_log.log(
+                "export.done", path=str(path), out=f"{out_w}x{out_h}",
+                elapsed=round(elapsed, 3),
+            )
             if mode in (MODE_AI, MODE_MANUAL) and depth is None:
                 note += "\n\n注意：未生成深度图，本次使用中心对焦导出。"
-            self.statusBar().showMessage("导出完成", 4000)
+            self.statusBar().showMessage(f"导出完成 · 用时 {elapsed:.2f}s", 4000)
             QMessageBox.information(
                 self, "导出完成",
                 f"已导出：\n{path}\n尺寸：{out_w}×{out_h}{note}"
             )
+            # 导出完成后再唤起资源管理器，避免对话框挡住新开的窗口。
+            if not reveal_in_explorer(path):
+                self.statusBar().showMessage("已导出，但未能自动打开文件夹。", 6000)
         except PermissionError as exc:
+            self.event_log.log("export.error", kind="permission", path=str(path))
             QMessageBox.critical(
                 self, "导出失败",
                 "没有写入权限：\n" + str(path) + "\n\n"
@@ -1643,6 +2309,7 @@ class MainWindow(QMainWindow):
                 + str(exc)
             )
         except Exception as exc:
+            self.event_log.log("export.error", error=str(exc))
             QMessageBox.critical(self, "导出失败", str(exc))
 
     def closeEvent(self, event):
@@ -1657,6 +2324,7 @@ class MainWindow(QMainWindow):
         self.depth_worker = None
         self.render_worker.stop()
         self._save_config()
+        self.event_log.log("app.exit", actions=len(self.history))
         if self._render_timer.isActive():
             self._render_timer.stop()
         super().closeEvent(event)

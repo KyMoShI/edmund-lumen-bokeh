@@ -42,6 +42,9 @@ class EngineSettings:
     cat_eye: float = 0.0
     subject_expand: float = 0.0
     subject_feather: float = 0.0
+    # 高光溢出补偿：越亮的光源，其光斑叠加越透明，避免过亮处糊成纯白。
+    highlight_rolloff: bool = False
+    highlight_threshold: float = 0.80
 
 
 class BokehEngine:
@@ -211,6 +214,11 @@ class BokehEngine:
         spherical = float(np.clip(getattr(settings, "spherical", 0.0), -1.0, 1.0))
         # Cat's-eye strength (mechanical vignetting at the frame edge).
         cat_eye = float(np.clip(getattr(settings, "cat_eye", 0.0), 0.0, 1.0))
+        # Highlight overflow compensation (read once, applied per disc below).
+        rolloff = bool(getattr(settings, "highlight_rolloff", False))
+        rolloff_at = float(
+            np.clip(getattr(settings, "highlight_threshold", 0.80), 0.0, 1.0)
+        )
         # Radii were originally tuned on a 1000px working image. Scale them with
         # the render resolution so a 24 MP export has the same relative bokeh
         # size as the preview instead of tiny discs.
@@ -266,6 +274,14 @@ class BokehEngine:
 
             strength = float(np.clip(weight * (0.35 + 0.8 * max(bokeh, 0.2)), 0.0, 1.0))
             strength *= 1.0 - 0.20 * edge * edge  # mild optical vignetting
+            if rolloff:
+                # Highlight overflow compensation: sources brighter than the
+                # threshold fade their disc out, so a blown-out light never
+                # stacks into a flat pure-white blob.
+                peak_luminance = float(lum[yi, xi])
+                if peak_luminance > rolloff_at:
+                    over = (peak_luminance - rolloff_at) / max(1.0 - rolloff_at, 1e-3)
+                    strength *= 1.0 - 0.85 * min(1.0, over)
 
             # Draw into a small local patch and ADD it to the layer. Using
             # fillPoly directly on the shared layer would overwrite earlier
