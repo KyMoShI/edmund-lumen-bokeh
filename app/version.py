@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 # 方便 ``from version import VERSION_TAG`` 直接拼标签
 VERSION_TAG = f"v{__version__}"
