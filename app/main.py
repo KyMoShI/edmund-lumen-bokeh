@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import subprocess
 import sys
@@ -26,7 +27,7 @@ from PySide6 import __version__ as QT_VERSION
 
 from engine import BokehEngine, EngineSettings, MODE_AI, MODE_MANUAL
 from depth_worker import (
-    DEFAULT_MODEL, MODEL_CHOICES, DepthWorker, model_label, resolve_model_path,
+    DEFAULT_MODEL, MODEL_SPECS, DepthWorker, model_label, model_spec, resolve_model_path,
     imported_models, add_imported_model, normalize_repo, is_complete_model_dir,
     is_local_ref,
 )
@@ -1041,6 +1042,7 @@ class MainWindow(QMainWindow):
         depth_form.addRow("对焦模式", self.depth_mode)
 
         self.model_combo = QComboBox()
+        self.model_combo.currentIndexChanged.connect(self.on_model_changed)
         depth_form.addRow("AI 模型", self.model_combo)
         self.refresh_model_labels()
 
@@ -1534,9 +1536,18 @@ class MainWindow(QMainWindow):
         current = self.model_combo.currentData()
         self.model_combo.blockSignals(True)
         self.model_combo.clear()
-        for name, repo_id, size in MODEL_CHOICES:
-            status = "已下载" if resolve_model_path(repo_id) else "首次需下载"
-            self.model_combo.addItem(f"{name}（{size}，{status}）", repo_id)
+        for spec in MODEL_SPECS:
+            status = "已下载" if resolve_model_path(spec.repo) else "首次需下载"
+            # DA3 定位成"更准"的那一档，标签里直接写出来，避免用户只看到两个陌生名字
+            tag = "（更准）" if spec.backend == "da3" else ""
+            self.model_combo.addItem(
+                f"{spec.name}{tag} · {spec.size_label} · {status}", spec.repo
+            )
+            self.model_combo.setItemData(
+                self.model_combo.count() - 1,
+                f"{spec.license} 许可 · {spec.repo}",
+                Qt.ItemDataRole.ToolTipRole,
+            )
         for item in imported_models():
             ref = item["ref"]
             if resolve_model_path(ref) is not None:
@@ -1551,6 +1562,24 @@ class MainWindow(QMainWindow):
             if index >= 0:
                 self.model_combo.setCurrentIndex(index)
         self.model_combo.blockSignals(False)
+        self.on_model_changed()
+
+    def on_model_changed(self, *_):
+        """选中 DA3 时说明状态：缺依赖 / 需要下载 / 已就绪。"""
+        if not hasattr(self, "ai_hint"):
+            return
+        spec = model_spec(self.model_combo.currentData() or "")
+        if spec.backend != "da3":
+            return
+        if importlib.util.find_spec("depth_anything_3") is None:
+            self.ai_hint.setText(
+                "DA3 需要额外安装依赖（见 README 的「Depth Anything 3」一节），"
+                "未安装时运行会给出提示。"
+            )
+        elif resolve_model_path(spec.repo) is None:
+            self.ai_hint.setText(f"DA3 更准，但权重更大：首次运行会下载{spec.size_label}。")
+        else:
+            self.ai_hint.setText("DA3 已就绪：比 V2 更准，代价是权重更大、首次加载稍慢。")
 
     def import_model(self):
         dialog = ModelImportDialog(self)

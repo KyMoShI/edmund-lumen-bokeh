@@ -1,0 +1,24 @@
+# Auxiliary dependencies for Depth Anything 3 (optional).
+#
+# IMPORTANT: never run `pip install depth-anything-3` on its own.
+# Its metadata pins numpy<2 and drags in moviepy / pycolmap / gsplat / open3d,
+# which are only used by its 3D/video export features. This project does not
+# use them, and the numpy pin would break the existing environment.
+#
+# Correct order (wheel first, with --no-deps, then these light deps):
+#
+#   .venv\Scripts\python.exe -m pip install --no-deps depth-anything-3==0.1.1
+#   .venv\Scripts\python.exe -m pip install -r requirements-da3.txt
+#
+# torchvision must match the installed torch; pip picks the matching build and
+# leaves torch itself untouched.
+#
+# NOTE: keep this file ASCII-only. On Windows pip may decode requirements files
+# with the locale codec (GBK), and non-ASCII comments make it fail.
+
+omegaconf>=2.3
+einops>=0.7
+imageio>=2.31
+addict>=2.4
+tqdm>=4.66
+torchvision

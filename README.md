@@ -26,7 +26,7 @@ Edmund Lumen Bokeh is a focused blur & bokeh simulator for Windows.
 - 调整虚化强度、模拟光圈、Bokeh 光斑、光斑大小
 - 中心对焦模式（无需 AI 模型），默认焦点在画面中部主体
 - 手动焦点：点击预览中的任意位置，把焦点设到该处
-- 可选 AI 深度估算（Depth Anything V2 Small / Base / Large），生成后自动把焦点对准画面中部
+- 可选 AI 深度估算（Depth Anything V2 Small / Base / Large，另可选 DA3 Small / Base），生成后自动把焦点对准画面中部
 - AI 模型可导入：选本地 HF 格式模型文件夹直接使用，或填仓库 ID / 链接；本地没有时自动联网下载（hf-mirror → huggingface.co，支持断点续传），导入的模型会被记住
 - 深度图可导入/导出：PNG/TIFF 为 16 位，JPEG 为 8 位，导出使用原图分辨率
 - 背景虚化按真实相机的光圈 PSF 做卷积（圆形/多边形散景核），不再使用高斯模糊
@@ -133,6 +133,26 @@ git push origin v1.1.0
 不想装 torch 也能用：**中心对焦**、**手动焦点**、**导入深度图**（PNG/TIFF 16 位或 JPEG）三条路都不依赖 AI。
 
 下载会依次尝试 hf-mirror 和 huggingface.co，支持断点续传。从 PyPI 安装的 PyTorch 在 Windows 上通常是 CPU 版本；要用 CUDA 加速，请按 NVIDIA 驱动和 CUDA 兼容情况，从 PyTorch 官方安装选择器获取命令后再安装。不要盲目安装与驱动不兼容的 CUDA wheel。
+
+### Depth Anything 3（可选，更准）
+
+模型列表里还有两档 **DA3 Small / DA3 Base**（字节 Seed 的 Depth Anything 3）。默认仍是 Depth Anything V2 Small，两者并存、随时切换。
+
+- **许可**：DA3-SMALL / DA3-BASE 权重是 **Apache-2.0**，可随应用分发；`DA3-LARGE`、`DA3-GIANT`、`DA3-NESTED` 是 **CC BY-NC 4.0（禁止商用）**，所以没有内置。
+- **安装**（必须是这个顺序，`--no-deps` 不能省）：
+
+  ```powershell
+  .\.venv\Scripts\python.exe -m pip install --no-deps depth-anything-3==0.1.1
+  .\.venv\Scripts\python.exe -m pip install -r requirements-da3.txt
+  ```
+
+  或者直接双击 `install_da3_windows.bat`。
+
+  不省 `--no-deps` 的话，pip 会把 numpy 钉回 `<2`，还会装 moviepy / pycolmap / gsplat / open3d——这些只有导出 3D 和视频才用得到，本项目完全不碰。
+- **权重**：首次选择 DA3 时自动下载（Small 约 131 MB、Base 约 480 MB），缓存在 `models/`。
+- **实现**：没有走 `depth_anything_3.api`（它 import 时就会拉导出模块），而是在 `app/depth_worker.py` 里用它的零件拼了一个薄适配层：配置 → 网络 → `model.safetensors` → 输入/输出处理器。因此依赖只有 omegaconf / einops / torchvision / imageio / addict，不需要 xformers。
+- **已知差异**：DA3 输出的相对深度动态范围很窄（实测 span ≈ 0.09），所以 DA3 走 2%–98% 分位数归一化，V2 仍是原来的 min-max，行为不变。
+- **黑白方向（重要）**：DA2 输出的是**视差**（值大 = 近，近处更白），DA3 直接输出**深度**（值大 = 远）。两者不做处理就会一张黑底白主体、一张白底黑主体，而且同一个「焦点深度」滑块在两种模型下表示的远近是相反的。代码里用 `ModelSpec.orientation` 统一翻转成「值大 = 近」，所以切换模型时深度图预览、导出图、滑块手感的语义都一致。
 
 ## 界面设计
 
@@ -253,8 +273,10 @@ Edmund Lumen Bokeh (伯爵大光圈模拟)/
 ├── .venv/                  # 运行环境（不入库，首次启动自动创建）
 ├── requirements.txt        # 基础依赖
 ├── requirements-ai.txt     # AI 可选依赖
+├── requirements-da3.txt    # Depth Anything 3 的辅助依赖（配合 --no-deps 安装）
 ├── run_windows.bat         # 一键启动
 ├── install_ai_windows.bat  # 安装 AI 依赖
+├── install_da3_windows.bat # 安装 DA3 依赖（可选）
 ├── settings.ini            # 上次使用的设置（首次使用后自动生成；不入库）
 ├── CHANGELOG.md            # 更新日志
 ├── LICENSE                 # MIT

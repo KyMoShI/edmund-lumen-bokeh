@@ -31,3 +31,6 @@ torchinductor_*/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 临时依赖探测目录（P0 验证用）
+tools/.probe/
