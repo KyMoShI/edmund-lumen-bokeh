@@ -5,9 +5,6 @@ Windows 桌面景深模拟工具。导入照片后，可按中心距离、点击
 **源码版本 1.2.5 · 现代主义**。本文说明当前源码。已有可执行文件的功能取决于其构建日期，版本差异见[更新日志](CHANGELOG.md)。
 
 
-
-(https://github.com/KyMoShI/edmund-lumen-bokeh/releases/download/v1.2.5/edmund-lumen-bokeh-v1.2.5-promo-landscape.mp4)
-
 ![浅色工作区](design-system/baoyue-bokeh/pages/workspace-photo.png)
 
 ## 快速启动
