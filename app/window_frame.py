@@ -1,7 +1,7 @@
 """Frameless main window chrome, with native Qt move/resize where available."""
 import sys
 from PySide6.QtCore import QObject, QEvent, QPoint, QRect, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QRegion
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QRegion
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QSizePolicy, QToolButton, QWidget
 from theme.tokens import RADIUS
 
@@ -19,17 +19,20 @@ class WindowDot(QToolButton):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        diameter = 10 if self.isDown() else 12
+        diameter = 12
         circle = QRectF((self.width()-diameter)/2, (self.height()-diameter)/2, diameter, diameter)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self.color)
-        if self.color == QColor("#000000") and self.palette().window().color().lightness() < 96:
-            painter.setPen(QPen(QColor("#9b9b9b"), .7))
+        painter.setBrush(self.state_color(self.underMouse(), self.hasFocus(), self.isDown()))
         painter.drawEllipse(circle)
-        if self.underMouse() or self.hasFocus():
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(self.color, 1))
-            painter.drawEllipse(circle.adjusted(-3, -3, 3, 3))
+
+    def state_color(self, hovered=False, focused=False, pressed=False):
+        color = self.color
+        # Dark-theme visibility is also a fill change, never an outline.
+        if color == QColor("#000000") and self.palette().window().color().lightness() < 96:
+            color = QColor("#606060")
+        gray_mix = .50 if pressed else .28 if hovered or focused else 0
+        return QColor(*(round(channel*(1-gray_mix) + 160*gray_mix)
+                        for channel in (color.red(),color.green(),color.blue())))
 
 
 class WindowsFrame:
@@ -106,7 +109,10 @@ class WindowsFrame:
             local = point - bar_origin
             for button in (bar.minimize, bar.maximize, bar.close_button):
                 if button.geometry().contains(local):
-                    return 9 if button is bar.maximize else 1  # HTMAXBUTTON / HTCLIENT
+                    # All dots are client-painted Qt buttons. HTMAXBUTTON would
+                    # let Windows paint its restore glyph over the custom dots.
+                    # Caption/edge hit regions above still provide native Aero Snap.
+                    return 1  # HTCLIENT
             return 2  # HTCAPTION: native drag, double-click and Windows edge tiling
         return None
 

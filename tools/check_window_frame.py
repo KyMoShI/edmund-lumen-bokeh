@@ -29,6 +29,30 @@ def run():
         app.processEvents()
         frame = window.window_frame
         try:
+            for button in (frame.title_bar.minimize, frame.title_bar.maximize, frame.title_bar.close_button):
+                button.clearFocus()
+                button.setAttribute(Qt.WidgetAttribute.WA_UnderMouse, False)
+                button.setDown(False)
+                normal = button.grab().toImage()
+                button.setAttribute(Qt.WidgetAttribute.WA_UnderMouse, True)
+                hover = button.grab().toImage()
+                button.setDown(True)
+                pressed = button.grab().toImage()
+                ratio = button.devicePixelRatioF()
+                center = QPoint(normal.width()//2, normal.height()//2)
+                assert normal.pixelColor(center) != hover.pixelColor(center)
+                assert hover.pixelColor(center) != pressed.pixelColor(center)
+                # A hover outline or changing dot diameter would modify pixels
+                # outside the unchanged 12px circle. Only its fill may change.
+                for y in range(normal.height()):
+                    for x in range(normal.width()):
+                        dx=(x+.5)/ratio-button.width()/2
+                        dy=(y+.5)/ratio-button.height()/2
+                        if dx*dx+dy*dy>7*7:
+                            assert normal.pixel(x,y)==hover.pixel(x,y)==pressed.pixel(x,y)
+                button.setDown(False)
+                button.setAttribute(Qt.WidgetAttribute.WA_UnderMouse, False)
+            print("PASS: hover/press change fill grayscale only; no outline or changed diameter")
             assert [button.color.name() for button in (frame.title_bar.minimize, frame.title_bar.maximize,
                                                        frame.title_bar.close_button)] == ["#000000", "#001eff", "#ff3d36"]
             assert all(not button.text() for button in (frame.title_bar.minimize, frame.title_bar.maximize,
@@ -52,10 +76,10 @@ def run():
                     msg.lParam = (x & 0xffff) | ((y & 0xffff) << 16)
                     return native.handle(native.ctypes.addressof(msg), frame)
                 assert hit(QPoint(100, 16)) == 2  # native caption for Aero Snap
-                assert hit(frame.title_bar.maximize.geometry().center()) == 9  # Snap Layouts button
+                assert hit(frame.title_bar.maximize.geometry().center()) == 1  # no native glyph overlay
                 assert hit(frame.title_bar.close_button.geometry().center()) == 1
                 assert hit(QPoint(2, 2)) == 13
-                print("PASS: real HWND snap styles, native caption/resize/max-button hit testing")
+                print("PASS: real HWND snap styles, native caption/resize and client-painted dot hit testing")
             print("PASS: three design dots, 18px corner mask and accessible controls")
             assert window.windowFlags() & Qt.WindowType.FramelessWindowHint
             assert window.menuWidget() is frame.title_bar
