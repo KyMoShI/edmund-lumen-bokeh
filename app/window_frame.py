@@ -1,9 +1,8 @@
 """Frameless main window chrome, with native Qt move/resize where available."""
 import sys
 from PySide6.QtCore import QObject, QEvent, QPoint, QRect, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QRegion
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QSizePolicy, QToolButton, QWidget
-from theme.tokens import RADIUS
 
 
 class WindowDot(QToolButton):
@@ -42,6 +41,13 @@ class WindowsFrame:
         from ctypes import wintypes
         self.ctypes, self.types, self.window = ctypes, wintypes, window
         self.hwnd = None
+        self.corner_preference = None
+        self.corner_hresult = None
+        self.dwm = ctypes.WinDLL("dwmapi", use_last_error=True)
+        for name in ("DwmSetWindowAttribute", "DwmGetWindowAttribute"):
+            function = getattr(self.dwm, name)
+            function.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+            function.restype = ctypes.c_long
         self.user32 = ctypes.WinDLL("user32", use_last_error=True)
         self.get_style = self.user32.GetWindowLongPtrW
         self.get_style.argtypes = [wintypes.HWND, ctypes.c_int]
@@ -63,6 +69,8 @@ class WindowsFrame:
 
     def enable(self):
         hwnd = int(self.window.winId())
+        if self.hwnd != hwnd:
+            self.corner_preference = None
         self.hwnd = hwnd
         # WS_CAPTION is retained for shell recognition, but NCCALCSIZE below
         # removes its visual frame. These flags make Aero Snap a native operation.
@@ -71,6 +79,22 @@ class WindowsFrame:
         if style & required != required:
             self.set_style(hwnd, -16, style | required)
             self.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0020 | 0x0001 | 0x0002 | 0x0004 | 0x0010)
+
+    def set_rounded(self, rounded):
+        if self.hwnd is None:
+            return
+        preference = 2 if rounded else 1  # DWMWCP_ROUND / DWMWCP_DONOTROUND
+        if self.corner_preference == preference:
+            return
+        value = self.ctypes.c_int(preference)
+        self.corner_hresult = self.dwm.DwmSetWindowAttribute(self.hwnd, 33,
+                                  self.ctypes.byref(value), self.ctypes.sizeof(value))
+        self.corner_preference = preference
+
+    def read_corner_preference(self):
+        value = self.ctypes.c_int()
+        result = self.dwm.DwmGetWindowAttribute(self.hwnd, 33, self.ctypes.byref(value), self.ctypes.sizeof(value))
+        return value.value if result == 0 else None
 
     def handle(self, message, frame):
         msg = self.types.MSG.from_address(int(message))
@@ -242,12 +266,11 @@ class ResizeEdge(QWidget):
 
 
 class FramelessWindowFrame(QObject):
-    def __init__(self, window, title_bar=None, *, rounded_mask=True, edge_inset=0):
+    def __init__(self, window, title_bar=None, *, native_rounding=True, edge_inset=0):
         super().__init__(window)
         self.window = window
         self.native = WindowsFrame(window) if sys.platform == "win32" and QApplication.platformName() == "windows" else None
-        self.corner_radius = RADIUS["radius.lg"]
-        self.rounded_mask = rounded_mask
+        self.native_rounding = native_rounding
         self.edge_inset = edge_inset
         window.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.title_bar = title_bar or WindowTitleBar(window)
@@ -277,12 +300,13 @@ class FramelessWindowFrame(QObject):
                      (0, height-band, band, band), (width-band, height-band, band, band)]
             rects = [(x+inset,y+inset,w,h) for x,y,w,h in rects]
         normal = not (self.window.isMaximized() or self.window.isFullScreen())
-        if self.rounded_mask and normal and not self._is_snapped():
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(self.window.rect()), self.corner_radius, self.corner_radius)
-            self.window.setMask(QRegion(path.toFillPolygon().toPolygon()))
-        else:
+        # A QRegion is binary and clips to integer pixels: even an antialiased
+        # path becomes a staircase after conversion. Keep a rectangular surface
+        # and let DWM composite native smooth corners at the actual display DPI.
+        if not self.window.mask().isEmpty():
             self.window.clearMask()
+        if self.native and self.native_rounding:
+            self.native.set_rounded(normal and not self._is_snapped())
         for widget, rect in zip(self.edges, rects):
             widget.setGeometry(*rect)
             widget.setVisible(normal)

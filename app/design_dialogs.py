@@ -240,7 +240,7 @@ class DesignDialog(QDialog):
         self.setMinimumSize(360,220);self.resize(540,440)
         self.setWindowTitle(title)
         if self._floating_chrome:
-            self.window_frame=FramelessWindowFrame(self,self.header,rounded_mask=False,edge_inset=12)
+            self.window_frame=FramelessWindowFrame(self,self.header,native_rounding=False,edge_inset=12)
 
     def nativeEvent(self,event_type,message):
         frame=getattr(self,'window_frame',None)

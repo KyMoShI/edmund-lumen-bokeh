@@ -57,12 +57,13 @@ def run():
                                                        frame.title_bar.close_button)] == ["#000000", "#001eff", "#ff3d36"]
             assert all(not button.text() for button in (frame.title_bar.minimize, frame.title_bar.maximize,
                                                          frame.title_bar.close_button))
-            assert frame.corner_radius == 18
-            assert not window.mask().contains(QPoint(0, 0))
-            assert window.mask().contains(QPoint(18, 18))
-            assert window.mask().contains(QPoint(window.width()//2, window.height()//2))
+            assert window.mask().isEmpty(), "No binary window mask may clip the antialiased compositor edge"
             if frame.native:
                 native = frame.native
+                if sys.getwindowsversion().build >= 22000:
+                    assert native.corner_hresult == 0
+                    assert native.read_corner_preference() == 2
+                    print("PASS: Windows 11 DWM rounding accepted and read back; no binary mask")
                 required = 0x00C00000 | 0x00040000 | 0x00080000 | 0x00020000 | 0x00010000
                 assert native.get_style(int(window.winId()), -16) & required == required
                 rect = native.types.RECT()
@@ -80,7 +81,7 @@ def run():
                 assert hit(frame.title_bar.close_button.geometry().center()) == 1
                 assert hit(QPoint(2, 2)) == 13
                 print("PASS: real HWND snap styles, native caption/resize and client-painted dot hit testing")
-            print("PASS: three design dots, 18px corner mask and accessible controls")
+            print("PASS: three design dots, native outer corners and accessible controls")
             assert window.windowFlags() & Qt.WindowType.FramelessWindowHint
             assert window.menuWidget() is frame.title_bar
             assert frame.title_bar.isVisible()
@@ -99,12 +100,16 @@ def run():
             app.processEvents()
             assert window.isMaximized()
             assert window.mask().isEmpty()
+            if frame.native and frame.native.corner_hresult == 0:
+                assert frame.native.read_corner_preference() == 1
             assert all(not edge.isVisible() for edge in frame.edges)
             assert frame.title_bar.maximize.toolTip() == "还原窗口"
             frame.title_bar.maximize.click()
             app.processEvents()
             assert not window.isMaximized()
-            assert not window.mask().isEmpty()
+            assert window.mask().isEmpty()
+            if frame.native and frame.native.corner_hresult == 0:
+                assert frame.native.read_corner_preference() == 2
             assert all(edge.isVisible() for edge in frame.edges)
             QTest.mouseDClick(frame.title_bar, Qt.MouseButton.LeftButton)
             app.processEvents()
