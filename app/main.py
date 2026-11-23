@@ -51,6 +51,7 @@ from session import load_session, save_session, source_signature
 from histogram import HistogramModel, HistogramPlot, HistogramPanel
 from card_motion import install_card_scroll
 from project_help import ProjectHelpBrowser
+from window_frame import FramelessWindowFrame
 
 APP_TITLE = "伯爵大光圈模拟"
 BRAND_TITLE = "伯爵大光圈"
@@ -2007,6 +2008,7 @@ class MainWindow(QMainWindow):
         self.welcome_page.actionRequested.connect(self._enter_workspace)
         self.pages.addWidget(self.welcome_page)
         self.show_welcome()
+        self.window_frame = FramelessWindowFrame(self)
         # 设备档案延迟到窗口出现后再采集（要查显卡/驱动，别拖慢启动）。
         QTimer.singleShot(1200, self.log_device_profile)
 

@@ -84,6 +84,8 @@ python -m venv .venv
 
 ## 导出规格
 
+当前打包前源码采用无边框主窗口；PS 联动原型已隔离至独立的 1.2.5 Git 分支。[分支目录与启动入口](docs/version-branches.md)
+
 | 选项 | 取值与作用 |
 | --- | --- |
 | 合成效果图 | RGB PNG 或 JPEG，JPEG 质量 60–100 |
