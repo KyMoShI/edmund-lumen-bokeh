@@ -29,6 +29,14 @@ if not exist ".venv\Scripts\python.exe" (
   )
 )
 
+".venv\Scripts\python.exe" -c "import sys" >nul 2>&1
+if errorlevel 1 (
+  echo 现有 .venv 无法启动，可能是原 Python 已被卸载或移动。
+  echo 请先备份或重命名 .venv，然后重新运行此脚本以创建新环境。
+  pause
+  exit /b 1
+)
+
 ".venv\Scripts\python.exe" -c "import PySide6, cv2, numpy, PIL" >nul 2>&1
 if errorlevel 1 (
   echo 正在安装依赖，首次运行需要联网，请稍候...

@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "file": "排版.pdf",
+    "page": 3,
+    "sha256": "945627123d706f889935ad8ccfc88589b9c85ad7171ea7a5737bd5c2d3c6591e",
+    "renderer": "PDFium"
+  },
+  "coordinateSystem": "top-left source design units; source PNGs are 1 pixel per design unit",
+  "artboard": [
+    4096,
+    2160
+  ],
+  "referenceScale": 0.3333333333333333,
+  "referenceLogicalSize": [
+    1365.3333333333333,
+    720
+  ],
+  "paperColor": "#FFFFFF",
+  "layers": [
+    {
+      "name": "left-band",
+      "file": "background-left-band.png",
+      "sourceCrop": [
+        0,
+        0,
+        31,
+        2160
+      ],
+      "sourcePaintRanges": [
+        [
+          69,
+          71
+        ]
+      ],
+      "anchor": "left-full-height",
+      "scaleMode": "fixed-logical-width-extend-height",
+      "sha256": "5bb446be32682046d413845c74ed1e94cd7cdb56899a75e2633b17cdd983b163"
+    },
+    {
+      "name": "guides",
+      "file": "background-guides.png",
+      "sourceCrop": [
+        144,
+        72,
+        3393,
+        545
+      ],
+      "sourcePaintRanges": [
+        [
+          72,
+          85
+        ]
+      ],
+      "anchor": "top-left-and-top-right-inset",
+      "scaleMode": "fixed-stroke-and-top-offset-extend-horizontal-line",
+      "sha256": "25148a6066aff699e94fb1a62ca386842dcc17dba48c3e7bff352d2717574c09"
+    },
+    {
+      "name": "wave-left",
+      "file": "background-wave-left.png",
+      "sourceCrop": [
+        30,
+        247,
+        2018,
+        1523
+      ],
+      "sourcePaintRanges": [
+        [
+          6,
+          45
+        ]
+      ],
+      "anchor": "left-content-edge-and-top",
+      "scaleMode": "uniform-height-scale-inner-crop",
+      "sha256": "81360f93cee1d24c9166e50e3ac138c2cf3df4bee74f614fe44725f67279cd63"
+    },
+    {
+      "name": "wave-right",
+      "file": "background-wave-right.png",
+      "sourceCrop": [
+        2048,
+        0,
+        2048,
+        1543
+      ],
+      "sourcePaintRanges": [
+        [
+          6,
+          45
+        ]
+      ],
+      "anchor": "right-and-top",
+      "scaleMode": "uniform-height-scale-inner-crop",
+      "sha256": "223d425f313bdd0b6d33d1b8119605dcb62e89afd564ab6e5c5dac0443f4eba8"
+    },
+    {
+      "name": "squares",
+      "file": "background-squares.png",
+      "sourceCrop": [
+        3883,
+        111,
+        98,
+        38
+      ],
+      "sourcePaintRanges": [
+        [
+          46,
+          50
+        ]
+      ],
+      "anchor": "top-right",
+      "scaleMode": "fixed-logical-size",
+      "sha256": "380f04b70ebf1ea85d0e37c59af4bf20769c3335d4a3c04ea7c9555dd894c58e"
+    },
+    {
+      "name": "bottom",
+      "file": "background-bottom.png",
+      "sourceCrop": [
+        0,
+        1887,
+        4096,
+        273
+      ],
+      "sourcePaintRanges": [
+        [
+          51,
+          68
+        ]
+      ],
+      "anchor": "bottom-left-and-bottom-right",
+      "scaleMode": "three-slice-fixed-height-and-slope-extend-middle",
+      "sha256": "502c975f0a7e9675fe39283941398b90cc835ab1985f7c5ed2bd2a0662c80ab4"
+    }
+  ],
+  "geometry": {
+    "leftBand": {
+      "width": 30.307,
+      "color": "#FF3D36"
+    },
+    "guides": {
+      "strokeWidth": 3,
+      "color": "#FF5C56",
+      "horizontal": {
+        "left": 144.3077,
+        "top": 130.0513,
+        "rightInset": 559.6923
+      },
+      "vertical": {
+        "left": 210.9744,
+        "top": 72.0513,
+        "length": 544
+      }
+    },
+    "squares": {
+      "color": "#001EFF",
+      "size": 37.065,
+      "top": 111.519,
+      "rightInsets": [
+        175.477,
+        115.477
+      ]
+    },
+    "waves": {
+      "sourceSplitX": 2048,
+      "scaleReference": "viewport-height / 2160",
+      "leftContentInset": 30.307,
+      "innerEdgeFadeDesignWidth": 192,
+      "innerEdgeFadeGapThresholdLogical": 2,
+      "overlapPolicy": "clip-left-and-right-artwork-to-their-viewport-halves"
+    },
+    "bottom": {
+      "sourceSliceX": [
+        268,
+        3789
+      ],
+      "colorDirection": "vertical",
+      "sourcePolygon": [
+        [
+          267.639,
+          1885.857
+        ],
+        [
+          0,
+          2154.428
+        ],
+        [
+          0,
+          2160
+        ],
+        [
+          4096,
+          2160
+        ],
+        [
+          3789.748,
+          1885.857
+        ]
+      ],
+      "preserveFixedLogicalCapWidths": true,
+      "preserveFixedLogicalColorBandHeight": true
+    },
+    "footer": {
+      "drawnBy": "workspace",
+      "sourceRect": [
+        0,
+        2109.889,
+        4096,
+        50.111
+      ]
+    }
+  },
+  "rendering": {
+    "baseAndGuideGeometry": "vector-from-recorded-source-values",
+    "wavesAndGradient": "source-raster-layer-sampling",
+    "wholeBackgroundNonUniformScaling": false,
+    "viewportOriginSupported": true,
+    "footerAndVersionExcluded": true
+  },
+  "referenceComparison": {
+    "expected": "source background apart from footer at referenceLogicalSize",
+    "allowance": "subpixel raster filtering and independently antialiased vector edges"
+  }
+}

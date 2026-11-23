@@ -1,0 +1,743 @@
+{
+  "schemaVersion": 1,
+  "status": "welcome-workspace-export-completion-and-secondary-dialogs-implemented",
+  "welcomeRuntime": {
+    "layout": "../../app/assets/welcome/layout.json",
+    "scene": "../../app/assets/welcome/scene.json",
+    "implementation": "../../app/welcome_scene.py",
+    "artboard": [
+      4096,
+      2160
+    ],
+    "uiScale": "min(width/4096,height/2160)",
+    "anchors": {
+      "brand": "bottom-left",
+      "start": "bottom-right",
+      "next": "top-right"
+    },
+    "sceneryAndCircles": {
+      "scale": "height/2160",
+      "aspectRatio": "uniform",
+      "horizontalOverflow": "crop",
+      "verticalAnchor": "bottom-relative-to-brand-row"
+    },
+    "background": "independent-waves-structure-and-base",
+    "paintAndHitMappingShared": true,
+    "workspaceScaleUnchanged": true,
+    "titleSequence": {
+      "origin": "post-source-runtime-revision-2026-11-17",
+      "implementation": "../../app/welcome.py",
+      "stages": [
+        "type-brand",
+        "hold-brand",
+        "clear-and-type-prompt",
+        "prompt-with-blinking-cursor"
+      ],
+      "brandText": "伯爵大光圈",
+      "holdMilliseconds": 3000,
+      "holdTimeReference": "real-time-not-animation-speed-scaled",
+      "promptText": "今天我们要模拟什么",
+      "promptGeometry": "fit-font-to-source-brand-text-rectangle-with-cursor-space",
+      "brandPanelAndDiamond": "preserve-source-geometry",
+      "cursor": "|",
+      "cursorToggleIntervalMilliseconds": 500,
+      "disabledAnimationOrTitle": "static-complete-prompt-with-steady-white-cursor-no-blink-timer",
+      "highFrequencyTimer": "active-typing-intro-and-interaction-only",
+      "holdTimer": "single-shot-with-real-time-deadline",
+      "completedTimer": "low-frequency-cursor-only",
+      "hiddenOrNavigation": "cancel-title-timers",
+      "screenshots": {
+        "brand": "pages/welcome.png",
+        "prompt": "pages/welcome-prompt.png"
+      }
+    }
+  },
+  "workspaceRuntime": {
+    "layout": "../../app/assets/workspace/layout.json",
+    "implementation": "../../app/workspace.py",
+    "controls": "../../app/workspace_controls.py",
+    "sourcePage": 3,
+    "uiScale": 0.3333333333333333,
+    "referenceLogicalSize": [
+      1365.3333333333333,
+      720
+    ],
+    "minimumLogicalSize": [
+      900,
+      640
+    ],
+    "pageSizeConstraint": "current-page-only-hidden-dark-layout-excluded",
+    "rightPanels": "fixed-logical-width-independent-proportional-height-anchored-right",
+    "cardSizing": {
+      "implementation": "../../app/workspace_card_resize.py",
+      "defaultHeightRatio": 1,
+      "heightLimit": "primary-action-body-top - 22 - card-top",
+      "actionBodyTopGapLogical": 22,
+      "minimumHeightsLogical": {
+        "history": 380,
+        "parameters": 340
+      },
+      "settingsKeys": {
+        "history": "workspace/historyHeightRatio",
+        "parameters": "workspace/parametersHeightRatio"
+      },
+      "mouse": "drag-bottom-grip-double-click-auto-height",
+      "keyboardStepLogical": 8,
+      "keyboardShiftStepLogical": 32,
+      "keyboardHome": "minimum-height",
+      "keyboardEnd": "auto-height",
+      "historyGrowth": "expand-history-list-and-move-settings-group-down",
+      "parametersGrowth": "expand-scroll-viewport-without-scaling-controls",
+      "floating": "hide-page-grip-use-paper-window-size-grip"
+    },
+    "frameRendering": "nine-slice-preserve-rounded-corners-stroke-and-shadow",
+    "previewViewports": "available-space-plus-two-adjustable-partition-ratios",
+    "previewPartitions": {
+      "implementation": "../../app/workspace_preview_layout.py",
+      "horizontal": "original-versus-right-column-width",
+      "vertical": "effect-versus-depth-height",
+      "default": "source-rectangle-ratios-with-original-gutters-and-insets",
+      "settingsKeys": {
+        "horizontal": "workspace/previewHorizontalRatio",
+        "vertical": "workspace/previewVerticalRatio"
+      },
+      "mouse": "drag-gutter-handles-double-click-reset-axis",
+      "keyboardStepLogical": 8,
+      "keyboardShiftStepLogical": 24,
+      "keyboardHome": "reset-axis",
+      "keyboardEscape": "cancel-active-drag",
+      "floating": "relayout-current-placeholder-without-recreating-canvas"
+    },
+    "previewImages": "initial-cover-with-independent-user-view-retained-during-resize",
+    "previewViewOperations": {
+      "wheel": "zoom-at-pointer-without-ctrl",
+      "middleDrag": "pan",
+      "doubleLeft": "contain-fit-current-viewport",
+      "menuActions": [
+        "zoomIn",
+        "zoomOut",
+        "fit",
+        "actualSize",
+        "resetView",
+        "resetLayout"
+      ],
+      "actualSizeUnit": "current-preview-pixel-per-logical-pixel",
+      "resetView": "current-viewport-cover-scale-and-centered-pan",
+      "resetLayout": "both-source-partition-ratios-without-changing-image-view"
+    },
+    "background": "independently-anchored-elements-with-uniform-wave-scale-and-three-slice-base",
+    "backgroundImplementation": "../../app/workspace_background.py",
+    "backgroundLayout": "../../app/assets/workspace/background.json",
+    "backgroundPolicy": {
+      "leftBand": "fixed-logical-width-full-height",
+      "guides": "fixed-stroke-and-top-offset-extend-horizontal-line",
+      "waves": "uniform-height-scale-anchored-left-and-right",
+      "squares": "fixed-logical-size-top-right",
+      "bottom": "three-horizontal-slices-preserve-slopes-and-vertical-gradient"
+    },
+    "sectionExpansion": "focus-header-only-lens-controls-permanent",
+    "focusDisclosure": {
+      "collapsed": "▸",
+      "expanded": "▾",
+      "rendering": "vector-chevron",
+      "defaultExpanded": false,
+      "explicitExpansionScroll": "group-start-bounded-to-scroll-range",
+      "easing": "OutCubic"
+    },
+    "lensControlCount": 11,
+    "metadataLayout": {
+      "exifColumns": [
+        "ISO",
+        "focalLength",
+        "aperture",
+        "exposureTime"
+      ],
+      "equalWidths": true,
+      "missingFields": "retain-empty-column",
+      "fallbackColumns": [
+        "dimensions",
+        "format"
+      ],
+      "emptyImage": "blank-and-noninteractive",
+      "content": "histogram-above-photo-metadata-band",
+      "bandBackground": "#808EFF",
+      "textColor": "#001579",
+      "photoThumbnail": false
+    },
+    "cameraDecoration": "end-of-scroll-content-flow",
+    "settingsMenuActions": [
+      "showOriginal",
+      "undo",
+      "redo",
+      "imageHistogram",
+      "returnToWelcome"
+    ],
+    "floatingTargets": [
+      "originalPreview",
+      "effectPreview",
+      "depthPreview",
+      "historySettings",
+      "parameters",
+      "lensBlur",
+      "focusDepth"
+    ],
+    "floatingRestore": "close-window-or-restore-in-place",
+    "floatingWidthConstraints": {
+      "unit": "logical-px",
+      "origin": "post-source-runtime-revision",
+      "parametersFormWidth": 267,
+      "parametersPanelMinimumWidth": 302,
+      "parametersDialogMinimumWidth": 398,
+      "dialogContentMarginHorizontal": 12,
+      "overflow": "vertical-scroll-with-complete-form-width",
+      "dialogChromeHorizontalTotal": 72
+    },
+    "primaryActions": {
+      "sourceArtwork": true,
+      "sameBaseline": true,
+      "aboveOrdinaryPanels": true
+    },
+    "controlState": "bidirectionally-bound-to-existing-processing-state",
+    "darkModeLayout": "preserve-existing-layout",
+    "exportCompletionPageImplemented": true,
+    "histogram": {
+      "origin": "post-source-runtime-revision-2026-11-17",
+      "implementation": "../../app/histogram.py",
+      "bins": 256,
+      "input": "current-preview-rgb-uint8",
+      "horizontalRange": [
+        0,
+        255
+      ],
+      "views": [
+        "luminance",
+        "red",
+        "green",
+        "blue"
+      ],
+      "singleChannelStyle": "gray-background-white-bars",
+      "luminanceDefinition": "cv2-COLOR_RGB2GRAY-encoded-values-not-linear-light",
+      "sharedViews": [
+        "light-parameter-card-top",
+        "dark-histogram-card",
+        "image-histogram-dialog"
+      ],
+      "state": "shared-counts-and-channel-selection",
+      "source": "original-while-comparing-otherwise-processed-or-original-fallback",
+      "excludeEffectRangeOverlay": true,
+      "channelChange": "reuse-existing-counts",
+      "emptyState": "clear-counts-disable-buttons-retain-channel-preference",
+      "photoMetadata": "retain-source-information-band-below-histogram",
+      "channelControls": {
+        "type": "three-square-toggle-buttons",
+        "labels": [
+          "R",
+          "G",
+          "B"
+        ],
+        "channels": [
+          "red",
+          "green",
+          "blue"
+        ],
+        "exclusive": true,
+        "selectedButtonCanToggleOff": true,
+        "allUncheckedChannel": "luminance",
+        "size": [
+          26,
+          26
+        ],
+        "radius": 5,
+        "gap": 6,
+        "topInset": 6,
+        "rightInset": 6,
+        "normal": {
+          "background": "#262626",
+          "text": "#FFFFFF"
+        },
+        "selected": {
+          "background": "#001EFF",
+          "text": "#FFFFFF"
+        }
+      },
+      "chartText": {
+        "title": false,
+        "channelCaption": false,
+        "axisLabels": false,
+        "legend": false
+      },
+      "background": "#E6E6E6",
+      "emptyPlot": "blank-without-visible-message"
+    },
+    "cardScroll": {
+      "origin": "post-source-runtime-revision-2026-11-17",
+      "implementation": "../../app/card_motion.py",
+      "curve": "easeOutCubic",
+      "curveFormula": "1 - (1 - progress)^3",
+      "wheelInput": "accumulate-clamped-target-position",
+      "pixelDeltaInput": "direct-pixel-follow-without-extra-inertia",
+      "durationRangeMillisecondsBeforeSpeed": [
+        160,
+        300
+      ],
+      "motionSettings": [
+        "enabled",
+        "speed",
+        "interval"
+      ],
+      "disabledAnimation": "apply-scroll-immediately",
+      "targets": [
+        "light-parameter-card-scroll",
+        "floating-card-scroll",
+        "dark-control-area"
+      ],
+      "cancelOn": [
+        "scrollbar-drag",
+        "external-position-change",
+        "explicit-reveal",
+        "range-change",
+        "viewport-resize",
+        "hide"
+      ],
+      "idle": "stop-update-timer"
+    }
+  },
+  "unit": "du",
+  "unitDefinition": "1 du has the same numeric value as 1 source PDF point; it is not a Qt font point or a runtime pixel.",
+  "artboard": {
+    "width": 4096,
+    "height": 2160
+  },
+  "runtimeMapping": {
+    "formula": "logicalPixels = designUnits * uiScale",
+    "uiScale": 0.3333333333333333,
+    "uiScaleStatus": "active-workspace-reference",
+    "examplesOnly": [
+      0.5
+    ],
+    "scaleControlsOnWindowResize": false,
+    "applyDevicePixelRatioInLayout": false,
+    "sourceMeasurementsArePreserved": true,
+    "allRuntimeRolesReadDirectlyFromThisFile": false
+  },
+  "typography": {
+    "family": "Sarasa Gothic SC",
+    "weights": [
+      400,
+      600,
+      700
+    ],
+    "availableFullFontWeights": [
+      400,
+      600,
+      700
+    ],
+    "missingFullFontWeights": [],
+    "fullFontFiles": {
+      "400": "../../app/assets/fonts/SarasaGothicSC-Regular.ttf",
+      "600": "../../app/assets/fonts/SarasaGothicSC-SemiBold.ttf",
+      "700": "../../app/assets/fonts/SarasaGothicSC-Bold.ttf"
+    },
+    "semiboldVerification": {
+      "preferredFamily": "Sarasa Gothic SC",
+      "style": "Semibold",
+      "os2Weight": 600,
+      "sha256": "7B88CB3FACA5E17C37B0700143B1F0B663F188DD98F5A945D66FF79B4A81E3DA"
+    },
+    "defaultLetterSpacing": 0,
+    "roles": {
+      "text.badge": {
+        "size": 23.4429,
+        "weight": 600,
+        "origin": "pdf-page-3"
+      },
+      "text.caption": {
+        "size": 30,
+        "weight": 600,
+        "origin": "pdf-page-3"
+      },
+      "text.captionStrong": {
+        "size": 30,
+        "weight": 700,
+        "origin": "pdf-page-3"
+      },
+      "text.metadata": {
+        "size": 32,
+        "weight": 600,
+        "origin": "pdf-page-3"
+      },
+      "text.reportAction": {
+        "size": 32,
+        "weight": 700,
+        "origin": "pdf-page-3"
+      },
+      "text.control": {
+        "size": 35.7778,
+        "weight": 600,
+        "origin": "pdf-page-3"
+      },
+      "text.previewTag": {
+        "size": 42.5,
+        "weight": 700,
+        "origin": "pdf-page-3"
+      },
+      "text.section": {
+        "size": 44.7222,
+        "weight": 700,
+        "origin": "pdf-page-3"
+      },
+      "text.workspaceAction": {
+        "size": 85,
+        "weight": 700,
+        "origin": "pdf-page-3"
+      },
+      "text.prose": {
+        "size": 35.7778,
+        "weight": 400,
+        "lineHeightRatio": 1.5,
+        "origin": "extension-rule"
+      },
+      "text.proseCaption": {
+        "size": 30,
+        "weight": 400,
+        "lineHeightRatio": 1.4,
+        "origin": "extension-rule"
+      },
+      "display.welcomeMark": {
+        "size": 371.5623,
+        "weight": 700,
+        "origin": "pdf-page-1"
+      },
+      "display.welcomeBrand": {
+        "size": 248.8141,
+        "weight": 700,
+        "origin": "pdf-page-1"
+      },
+      "display.welcomeStart": {
+        "size": 190.8221,
+        "weight": 700,
+        "origin": "pdf-page-1"
+      },
+      "display.welcomeNext": {
+        "size": 112,
+        "weight": 700,
+        "origin": "pdf-page-1"
+      },
+      "display.completeTitle": {
+        "size": 190.8221,
+        "weight": 700,
+        "origin": "pdf-page-2"
+      },
+      "display.completeNumber": {
+        "size": 83,
+        "weight": 700,
+        "origin": "pdf-page-2"
+      },
+      "display.completeAction": {
+        "size": 64.3391,
+        "weight": 700,
+        "origin": "pdf-page-2"
+      },
+      "display.completePath": {
+        "size": 43,
+        "weight": 600,
+        "origin": "pdf-page-2"
+      }
+    },
+    "preservePageSpecificDisplayText": true
+  },
+  "runtimeTypography": {
+    "unit": "logical-px",
+    "origin": "workspace-code-rounded-from-source-scale",
+    "text.badge": 8,
+    "text.caption": 10,
+    "text.captionStrong": 10,
+    "text.metadata": 11,
+    "text.reportAction": 11,
+    "text.control": 12,
+    "text.section": 15,
+    "sourceArtworkRoles": [
+      "text.previewTag",
+      "text.workspaceAction"
+    ]
+  },
+  "runtimeControlGeometry": {
+    "unit": "logical-px",
+    "origin": "post-source-form-alignment-revision-2026-11-16",
+    "preserveSourceMeasurements": true,
+    "formControlOuterHeight": 26,
+    "sectionTitleHeight": 26,
+    "sectionTitleRadius": 13,
+    "formInsetHorizontal": 18,
+    "labelWidth": 58,
+    "columnGap": 8,
+    "inputAndPaintedTrackStart": 84,
+    "inputRightEdge": "groupWidth - 18",
+    "numberMinimumWidth": 44,
+    "numberWidthPolicy": "measure-longest-legal-text-and-keep-stable-column",
+    "sliderThumbToNumberGap": 8,
+    "sliderRowHeight": 30,
+    "rowGap": 8,
+    "actionButton": {
+      "minimumHeight": 26,
+      "textPaddingHorizontal": 10,
+      "textPaddingVertical": 3,
+      "longText": "wrap-and-increase-height"
+    },
+    "historyPanel": {
+      "insetHorizontal": 14,
+      "settingsHeight": 30,
+      "reportHeight": 28,
+      "ordinaryActionHeight": 26,
+      "qualityRow": "label-left-action-right"
+    },
+    "controlBorderApproximateWidth": 0.25,
+    "sliderHandleBorderApproximateWidth": 0.85,
+    "focusRendering": "component-specific-with-some-inset-contours",
+    "independentOuterFocusRingUniformlyImplemented": false
+  },
+  "borders": {
+    "border.none": {
+      "width": 0,
+      "style": "none",
+      "visible": false,
+      "origin": "pdf"
+    },
+    "border.control": {
+      "width": 0.75,
+      "origin": "pdf-page-3-compound-fill-equivalent"
+    },
+    "border.panel": {
+      "width": 2,
+      "origin": "pdf-page-3"
+    },
+    "border.sliderHandle": {
+      "width": 2.5,
+      "origin": "pdf-page-3-compound-fill-equivalent"
+    },
+    "border.focus": {
+      "width": 4,
+      "origin": "extension-rule",
+      "placement": "independent-outer-ring"
+    }
+  },
+  "radii": {
+    "radius.square": {
+      "value": 0,
+      "origin": "pdf"
+    },
+    "radius.checkbox": {
+      "value": 6.292,
+      "origin": "pdf-page-3"
+    },
+    "radius.control": {
+      "value": 14.242,
+      "origin": "pdf-page-3"
+    },
+    "radius.panel": {
+      "value": 50,
+      "origin": "pdf"
+    },
+    "radius.action": {
+      "value": 50,
+      "origin": "pdf"
+    },
+    "radius.pill": {
+      "formula": "min(outerWidth, outerHeight) / 2",
+      "origin": "shape-rule"
+    },
+    "radius.circle": {
+      "formula": "min(outerWidth, outerHeight) / 2",
+      "origin": "shape-rule"
+    }
+  },
+  "spacing": {
+    "origin": "extension-rule",
+    "baseStep": 6,
+    "scale": [
+      0,
+      6,
+      12,
+      24,
+      36,
+      48,
+      72,
+      96
+    ],
+    "roles": {
+      "space.inline": 12,
+      "space.control": 24,
+      "space.row": 36,
+      "space.section": 48,
+      "space.panel": 72
+    },
+    "preserveSourceAnchors": true
+  },
+  "components": {
+    "formControl": {
+      "outerHeight": 56.665,
+      "radiusRole": "radius.control",
+      "borderRole": "border.control",
+      "textRole": "text.control"
+    },
+    "extensionSectionBar": {
+      "outerHeight": 64.262,
+      "radiusRole": "radius.pill",
+      "textRole": "text.section"
+    },
+    "workspaceImportExport": {
+      "width": 506.682,
+      "outerHeight": 146.051,
+      "radiusRole": "radius.action",
+      "textRole": "text.workspaceAction",
+      "origin": "pdf-page-3"
+    },
+    "completeExitNext": {
+      "width": 383.523,
+      "outerHeight": 110.551,
+      "radiusRole": "radius.action",
+      "origin": "pdf-page-2",
+      "preserveTextAndAppearance": true
+    },
+    "welcomeStart": {
+      "width": 901.923,
+      "outerHeight": 259.98,
+      "radiusRole": "radius.action",
+      "origin": "pdf-page-1"
+    }
+  },
+  "sourceShapeMeasurements": {
+    "checkbox": {
+      "width": 24.51,
+      "height": 24.51,
+      "radius": 6.292,
+      "borderWidth": 0.75
+    },
+    "sliderGroove": {
+      "width": 419.144,
+      "height": 28.484,
+      "radius": 14.242
+    },
+    "sliderHandle": {
+      "width": 28.484,
+      "height": 56.665,
+      "radius": 14.242,
+      "borderWidth": 2.5
+    },
+    "scrollbar": {
+      "width": 31.094,
+      "radius": 15.547
+    },
+    "reportButton": {
+      "width": 253.341,
+      "height": 73.026,
+      "radius": 36.513
+    },
+    "originalSectionBar": {
+      "height": 64.262,
+      "endRadii": [
+        30,
+        32.131
+      ]
+    }
+  },
+  "sourceDecorativeStrokes": {
+    "redLinesAndCircles": 3,
+    "blueWaves": 4,
+    "dropdownArrow": 5,
+    "cameraDecoration": 6,
+    "workspaceActionTextOutline": 1,
+    "preserveHairlineSemantics": true
+  },
+  "sourcePathExceptions": [
+    "backgroundGeometry",
+    "brandDisplay",
+    "originalSectionBars",
+    "pageSpecificDisplayButtons"
+  ],
+  "stateGeometry": {
+    "preserveControlLayoutBounds": true,
+    "preserveContentBounds": true,
+    "focusRingIsOutsideLayoutBounds": true,
+    "reserveFocusRingSpace": true,
+    "clearTransientDecorationsWhenStateEnds": true,
+    "retainFocusRingWhileKeyboardFocusIsValid": true
+  },
+  "runtimeActionText": {
+    "origin": "post-source-revision-2026-11-16",
+    "roles": [
+      "welcomeStart",
+      "welcomeNext",
+      "workspaceImport",
+      "workspaceExport",
+      "completeExit",
+      "completeNext"
+    ],
+    "fill": "#FFFFFF",
+    "blueGlyphOutline": false,
+    "preserveButtonGeometry": true,
+    "keyboardFocusRing": true,
+    "brandAndDisplayTitle": "preserve-source-artwork"
+  },
+  "completionRuntime": {
+    "implementation": "../../app/export_completion.py",
+    "layout": "../../app/assets/completion/layout.json",
+    "sourcePage": 2,
+    "referenceScale": 0.3333333333333333,
+    "background": "blurred-current-workspace-snapshot-with-translucent-shade",
+    "illustration": "grayscale-preserving-alpha",
+    "path": "selectable-copyable-wrap-or-scroll-explicit-reveal",
+    "randomNumberRange": [
+      0,
+      9
+    ],
+    "numberBadge": {
+      "background": "#909090",
+      "text": "#FFFFFF",
+      "minimumFontSizePx": 19,
+      "weight": 700
+    },
+    "exit": "return-to-welcome",
+    "next": "return-to-current-workspace-preserving-state-and-history",
+    "escape": "next",
+    "motion": "respect-global-motion-settings"
+  },
+  "secondaryDialogRuntime": {
+    "implementation": "../../app/design_dialogs.py",
+    "unit": "logical-px",
+    "paperRadius": 16,
+    "paperBorder": 0.75,
+    "contentInsets": [
+      36,
+      88,
+      36,
+      32
+    ],
+    "headerHeight": 44,
+    "titleHeight": 30,
+    "titleFont": 16,
+    "bodyFont": 13,
+    "hintFont": 12,
+    "messageSeverityWeight": 700,
+    "inputRadius": 5,
+    "inputPadding": [
+      5,
+      10
+    ],
+    "buttonRadius": 7,
+    "buttonPadding": [
+      6,
+      12
+    ],
+    "formRowGap": 14,
+    "formColumnGap": 20,
+    "bodyScroll": true,
+    "footer": "outside-scroll-area",
+    "movableHeader": true,
+    "sizeGrip": [
+      16,
+      16
+    ],
+    "nativeFilePickers": "system-style"
+  }
+}

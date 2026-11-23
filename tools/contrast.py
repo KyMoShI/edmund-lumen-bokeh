@@ -27,10 +27,9 @@ CHECKS = [
     ("color.text.muted", "color.bg.root", 4.5, "辅助说明 11px"),
     ("color.text.muted", "color.bg.panel", 4.5, "面板内辅助说明"),
     ("color.text.muted", "color.bg.control", 4.5, "控件内辅助说明"),
-    ("color.accent", "color.bg.root", 4.5, "强调色文字（标题）"),
-    ("color.text.warm", "color.bg.root", 4.5, "文字型操作（暗底橙字）"),
-    ("color.text.on.warm", "color.accent", 4.5, "黄底椭圆按钮上的橙字"),
-    ("color.on.accent", "color.accent", 4.5, "主按钮文字"),  # 琥珀上的黑字
+    ("color.accent.ink", "color.bg.panel", 4.5, "浅底上的红字"),
+    ("color.alt", "color.bg.panel", 4.5, "蓝色次要强调"),
+    ("color.on.accent", "color.accent", 4.5, "主按钮文字（红底白字）"),
 ]
 
 

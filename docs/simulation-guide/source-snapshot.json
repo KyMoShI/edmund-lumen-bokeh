@@ -1,0 +1,80 @@
+{
+  "basis": "current-source-not-lens-calibration",
+  "files": {
+    "app/engine.py": "a9459e93b73d81fbe891e93829337e1137796f9653c87685f8c7df5fb4a9c0e9",
+    "app/bokeh_sources.py": "45838960301a663db7770e55f52ce13aa6917b7e49afbe640a80f9825cb8befe",
+    "app/depth_worker.py": "0949d022e830a980c00a647b2d2d49ecc99e8ec2a708d8052fcd3869f823f214",
+    "app/main.py": "cfcf05ebd871ada768942a7e8fa099bd6b107f10d5ca12596c556f87a1187260"
+  },
+  "psfSamples": {
+    "commonDisplayPeak": 0.0007897144532762468,
+    "samples": [
+      {
+        "label": "圆形 · 轴上",
+        "radius": 42,
+        "bladeCount": 0,
+        "spherical": 0.0,
+        "fieldX": 0.0,
+        "fieldY": 0.0,
+        "defocusSign": 1,
+        "kernelSum": 1.0,
+        "peak": 0.00032320586615242064
+      },
+      {
+        "label": "六边形 · 轴上",
+        "radius": 42,
+        "bladeCount": 6,
+        "spherical": 0.0,
+        "fieldX": 0.0,
+        "fieldY": 0.0,
+        "defocusSign": 1,
+        "kernelSum": 1.0,
+        "peak": 0.00042745101382024586
+      },
+      {
+        "label": "圆形 · 离轴开口裁切",
+        "radius": 42,
+        "bladeCount": 0,
+        "spherical": 0.0,
+        "fieldX": 0.65,
+        "fieldY": 0.0,
+        "defocusSign": 1,
+        "kernelSum": 1.0,
+        "peak": 0.0006287703290581703
+      },
+      {
+        "label": "球差 +1 · 相位离焦 +1",
+        "radius": 42,
+        "bladeCount": 0,
+        "spherical": 1.0,
+        "fieldX": 0.0,
+        "fieldY": 0.0,
+        "defocusSign": 1,
+        "kernelSum": 1.0,
+        "peak": 0.0004911933210678399
+      },
+      {
+        "label": "球差 +1 · 相位离焦 −1",
+        "radius": 42,
+        "bladeCount": 0,
+        "spherical": 1.0,
+        "fieldX": 0.0,
+        "fieldY": 0.0,
+        "defocusSign": -1,
+        "kernelSum": 1.0,
+        "peak": 0.0007897144532762468
+      },
+      {
+        "label": "球差 −1 · 相位离焦 +1",
+        "radius": 42,
+        "bladeCount": 0,
+        "spherical": -1.0,
+        "fieldX": 0.0,
+        "fieldY": 0.0,
+        "defocusSign": 1,
+        "kernelSum": 1.0,
+        "peak": 0.0007897144532762468
+      }
+    ]
+  }
+}

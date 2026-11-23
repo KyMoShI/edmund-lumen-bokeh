@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "artboard": [
+    4096,
+    2160
+  ],
+  "coordinateSystem": "top-left source design points; 1 source point = 1 asset pixel",
+  "source": {
+    "file": "排版.pdf",
+    "page": 1,
+    "sha256": "945627123d706f889935ad8ccfc88589b9c85ad7171ea7a5737bd5c2d3c6591e",
+    "renderer": "PDFium"
+  },
+  "layers": [
+    {
+      "name": "background",
+      "file": "background.png",
+      "rect": [
+        0,
+        0,
+        4096,
+        2160
+      ]
+    },
+    {
+      "name": "brand_panel",
+      "file": "brand_panel.png",
+      "rect": [
+        225,
+        1544,
+        1833,
+        381
+      ]
+    },
+    {
+      "name": "mark",
+      "file": "mark.png",
+      "rect": [
+        419,
+        1301,
+        427,
+        271
+      ]
+    },
+    {
+      "name": "brand_text",
+      "file": "brand_text.png",
+      "rect": [
+        424,
+        1599,
+        1223,
+        236
+      ]
+    },
+    {
+      "name": "start",
+      "file": "start.png",
+      "rect": [
+        2810,
+        1541,
+        1028,
+        386
+      ]
+    },
+    {
+      "name": "next",
+      "file": "next.png",
+      "rect": [
+        3288,
+        197,
+        518,
+        181
+      ]
+    }
+  ],
+  "buttons": {
+    "start": {
+      "rect": [
+        2859.5669,
+        1595.3275,
+        901.923,
+        259.98
+      ],
+      "radius": 50,
+      "layer": "start",
+      "accessibleName": "START",
+      "action": "start"
+    },
+    "next": {
+      "rect": [
+        3310.529,
+        218.26,
+        463.558,
+        126.005
+      ],
+      "radius": 0,
+      "layer": "next",
+      "accessibleName": "NEXT",
+      "action": "resume"
+    }
+  },
+  "brandText": {
+    "layer": "brand_text",
+    "text": "伯爵大光圈",
+    "font": {
+      "family": "Sarasa Gothic SC",
+      "weight": 700,
+      "sourceSize": 248.8141
+    },
+    "glyphRightEdges": [
+      667.8483,
+      916.6624,
+      1165.4765,
+      1414.2906,
+      1663.1047
+    ],
+    "note": "Reveal includes original white glyph fill and blue vector hairline outline."
+  },
+  "verification": {
+    "maxChannelDifference": 255,
+    "meanAbsoluteChannelDifference": 0.05874498155381944,
+    "changedPixels": 101842
+  },
+  "runtimeStyle": {
+    "actionText": "white-fill-without-blue-outline",
+    "brandText": "source-artwork"
+  }
+}

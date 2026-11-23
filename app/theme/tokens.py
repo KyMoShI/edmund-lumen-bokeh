@@ -1,15 +1,12 @@
 """设计令牌 —— 「伯爵大光圈」UI 的唯一色源。
 
-来源：`design-system/baoyue-bokeh/MASTER.md`（ui-ux-pro-max 生成）
-覆盖：设计方向 B —— 保留黄黑高对比，只精修执行质量。
-      数据库给出的 "Photo Editor & Filters" 调色板是紫/青，被产品决策否决；
-      结构建议（Minimalism & Swiss、Density 8、Motion 3、无 emoji 图标、
-      可见焦点、正文 4.5:1）全部保留。
+当前方向：浅色纸面 + 红蓝点缀（参考「RE:VOLUTION」式的编辑排版）。
+结构仍然是 Minimalism / Swiss：细线、圆角、留白、单一强调色。
 
 使用规则
 --------
 1. QSS 模板只能写 ``{{token}}``，禁止出现字面量 ``#RRGGBB``；
-2. 新颜色先进 ``NEUTRAL`` / ``AMBER``，再在 ``SEMANTIC`` 里给语义名；
+2. 新颜色先进 ``PAPER`` / ``INK`` / ``RED`` / ``BLUE``，再在 ``SEMANTIC`` 里给语义名；
 3. 改色后必须重跑 ``tools/contrast.py``，正文对比度 ≥ 4.5:1；
 4. 这里的值是按 100% DPI 的逻辑像素，Qt 会按 devicePixelRatio 自动缩放。
 """
@@ -17,40 +14,40 @@
 from __future__ import annotations
 
 # --------------------------------------------------------------------------
-# 原始色（primitive）—— 只描述"是什么颜色"，不描述"用在哪"
+# 原始色（primitive）
 # --------------------------------------------------------------------------
 
-NEUTRAL = {
-    "n950": "#050505",  # 画布：比根背景再暗一档，让照片有"装裱"边界
-    "n900": "#0A0A0A",  # 根背景 / 品牌黑
-    "n850": "#0D0D0D",
-    "n800": "#101010",  # 面板、分组底
-    "n750": "#141414",  # 控件底
-    "n700": "#181818",  # 控件底（抬高一层，用于选中/滑轨槽）
-    "n600": "#1F1F1F",  # hover 底
-    "n500": "#262626",  # 弱分隔线
-    "n400": "#333333",  # 默认描边
-    "n300": "#454545",  # 强描边 / hover 描边
-    "n200": "#6B6B6B",  # 禁用文字（WCAG 对 inactive 组件豁免）
-    "n100": "#9A9A9A",  # 三级文字
-    "n050": "#B8B8B8",  # 二级文字
-    "n000": "#F5F5F5",  # 主文字
+PAPER = {
+    "p000": "#FFFFFF",  # 卡片、控件底
+    "p050": "#FBFAF9",  # 控件底（比卡片再暗一点）
+    "p100": "#F7F5F3",  # 窗口底：暖白纸面
+    "p150": "#F2EFEC",  # hover 底
+    "p200": "#EDE8E4",  # 画布 / 按下底
+    "p300": "#E4DED9",  # 弱分隔线
+    "p400": "#D3CBC5",  # 默认描边
+    "p500": "#B7AEA7",  # 强描边 / hover
 }
 
-AMBER = {
-    "a300": "#FFDF8F",  # hover
-    "a400": "#F6D05D",  # 品牌强调色（与 logo 完全一致，全项目唯一黄）
-    "a500": "#D9B44C",  # pressed
+INK = {
+    "k900": "#141414",  # 主文字 / 关键按钮底
+    "k800": "#2B2826",  # 黑底按钮 hover
+    "k700": "#4A4643",  # 次级文字
+    "k500": "#6E6864",  # 辅助说明
+    "k400": "#A9A29C",  # 禁用（WCAG 对 inactive 组件豁免）
 }
 
-# 暖橙：给"导入图片"这类文字型操作使用。
-# 注意：亮橙 (#FF9F43) 放在品牌黄上只有 1.37:1，读不清；
-# 黄底上的橙字必须用深橙 #9A3412（4.91:1），暗底上才用亮橙。
-ORANGE = {
-    "o400": "#FF9F43",  # 暗底上的橙字
-    "o300": "#FFB877",  # 暗底 hover
-    "o500": "#E8892E",  # 暗底 pressed
-    "o700": "#9A3412",  # 黄底上的橙字（唯一可用）
+RED = {
+    "r700": "#A81E16",  # 按下
+    "r600": "#C62828",  # hover
+    "r500": "#D92D20",  # 主强调（白字在其上 4.83:1）
+    "r400": "#B42318",  # 浅底上的红字
+    "r050": "#FDECEA",  # 浅红底
+}
+
+BLUE = {
+    "b600": "#1D4ED8",  # 次强调 / 焦点环
+    "b500": "#2563EB",
+    "b050": "#E8EEFD",
 }
 
 # --------------------------------------------------------------------------
@@ -59,48 +56,75 @@ ORANGE = {
 
 SEMANTIC = {
     # 背景
-    "color.bg.root": NEUTRAL["n900"],
-    "color.bg.panel": NEUTRAL["n800"],
-    "color.bg.control": NEUTRAL["n750"],
-    "color.bg.control.hover": NEUTRAL["n600"],
-    "color.bg.control.active": NEUTRAL["n700"],
-    "color.bg.canvas": NEUTRAL["n950"],
-    "color.bg.tooltip": NEUTRAL["n700"],
+    "color.bg.root": PAPER["p100"],
+    "color.bg.panel": PAPER["p000"],
+    "color.bg.control": PAPER["p050"],
+    "color.bg.control.hover": PAPER["p150"],
+    "color.bg.control.active": PAPER["p200"],
+    "color.bg.canvas": PAPER["p200"],
+    "color.bg.tooltip": INK["k900"],
+    "color.bg.soft": PAPER["p150"],
     # 描边
-    "color.border.subtle": NEUTRAL["n500"],
-    "color.border": NEUTRAL["n400"],
-    "color.border.hover": NEUTRAL["n300"],
-    "color.border.focus": AMBER["a400"],
+    "color.border.subtle": PAPER["p300"],
+    "color.border": PAPER["p400"],
+    "color.border.hover": PAPER["p500"],
+    "color.border.focus": BLUE["b600"],
     # 文字
-    "color.text.primary": NEUTRAL["n000"],
-    "color.text.secondary": NEUTRAL["n050"],
-    "color.text.muted": NEUTRAL["n100"],
-    "color.text.disabled": NEUTRAL["n200"],
-    # 暖色文字（暗底 / 黄底两套，不可混用）
-    "color.text.warm": ORANGE["o400"],
-    "color.text.warm.hover": ORANGE["o300"],
-    "color.text.warm.active": ORANGE["o500"],
-    "color.text.on.warm": ORANGE["o700"],
-    # 强调
-    "color.accent": AMBER["a400"],
-    "color.accent.hover": AMBER["a300"],
-    "color.accent.active": AMBER["a500"],
-    "color.on.accent": NEUTRAL["n900"],
-    # 焦点环（QSS 只能靠 border 模拟，真正的外发光留给自绘）
-    "color.focus.ring": AMBER["a400"],
-    "color.focus.ring.inner": NEUTRAL["n900"],
+    "color.text.primary": INK["k900"],
+    "color.text.secondary": INK["k700"],
+    "color.text.muted": INK["k500"],
+    "color.text.disabled": INK["k400"],
+    "color.text.on.dark": PAPER["p000"],
+    # 强调（红）
+    "color.accent": RED["r500"],
+    "color.accent.hover": RED["r600"],
+    "color.accent.active": RED["r700"],
+    "color.accent.ink": RED["r400"],
+    "color.accent.soft": RED["r050"],
+    "color.on.accent": PAPER["p000"],
+    # 次强调（蓝）
+    "color.alt": BLUE["b600"],
+    "color.alt.soft": BLUE["b050"],
+    # 关键按钮（黑底白字）
+    "color.solid": INK["k900"],
+    "color.solid.hover": INK["k800"],
+    "color.solid.active": "#000000",
+    "color.on.solid": PAPER["p000"],
+    # 焦点
+    "color.focus.ring": BLUE["b600"],
+    "color.focus.ring.inner": PAPER["p000"],
 }
 
+
+# 延续旧版黄黑主题，并补齐当前模板新增的语义色。
+DARK = {
+    "color.bg.root": "#0A0A0A", "color.bg.panel": "#101010",
+    "color.bg.control": "#141414", "color.bg.control.hover": "#1F1F1F",
+    "color.bg.control.active": "#181818", "color.bg.canvas": "#050505",
+    "color.bg.tooltip": "#262626", "color.bg.soft": "#1F1F1F",
+    "color.border.subtle": "#262626", "color.border": "#454545",
+    "color.border.hover": "#6B6B6B", "color.border.focus": "#F6D05D",
+    "color.text.primary": "#F5F5F5", "color.text.secondary": "#B8B8B8",
+    "color.text.muted": "#B0B0B0", "color.text.disabled": "#777777",
+    "color.text.on.dark": "#FFFFFF",
+    "color.accent": "#F6D05D", "color.accent.hover": "#FFDF8F",
+    "color.accent.active": "#D9B44C", "color.accent.ink": "#F6D05D",
+    "color.accent.soft": "#332C19", "color.on.accent": "#0A0A0A",
+    "color.alt": "#F6D05D", "color.alt.soft": "#332C19",
+    "color.solid": "#F6D05D", "color.solid.hover": "#FFDF8F",
+    "color.solid.active": "#D9B44C", "color.on.solid": "#0A0A0A",
+    "color.focus.ring": "#F6D05D", "color.focus.ring.inner": "#0A0A0A",
+}
 # 已实测的对比度（tools/contrast.py 复算，sRGB / WCAG 2.1）
 CONTRAST = {
-    ("text.primary", "bg.root"): 18.16,
-    ("text.secondary", "bg.root"): 9.98,
-    ("text.muted", "bg.root"): 7.04,
-    ("text.muted", "bg.panel"): 6.71,
-    ("accent", "bg.root"): 13.29,
-    ("on.accent", "accent"): 13.29,
-    ("accent.hover", "bg.root"): 15.28,
-    ("text.primary", "bg.control"): 16.60,
+    ("text.primary", "bg.root"): 16.94,
+    ("text.primary", "bg.panel"): 17.6,
+    ("text.secondary", "bg.root"): 8.59,
+    ("text.muted", "bg.root"): 5.05,
+    ("text.muted", "bg.panel"): 5.3,
+    ("on.accent", "accent"): 4.83,
+    ("accent.ink", "bg.panel"): 6.57,
+    ("alt", "bg.panel"): 6.70,
 }
 
 # --------------------------------------------------------------------------
@@ -118,20 +142,20 @@ SPACE = {
 }
 
 RADIUS = {
-    "radius.sm": 4,
-    "radius.md": 8,
-    "radius.lg": 12,
+    "radius.sm": 8,     # 勾选、滑块手柄
+    "radius.md": 12,    # 按钮、输入框、下拉
+    "radius.lg": 18,    # 卡片、画布
+    "radius.pill": 999,  # 主按钮胶囊
 }
 
 FONT = {
-    # 打包字体见 tools/build_font.py；加载失败时回落到系统字体
     "font.family": "Baoyue UI",
     "font.mono": "Cascadia Mono",
-    "font.size.caption": 11,  # 辅助说明（11px 是中文下限，不许再小）
-    "font.size.body": 12,     # 正文、表单标签
-    "font.size.bodyLg": 13,   # 数值、重要标签
-    "font.size.section": 14,  # 分组标题
-    "font.size.title": 20,    # 窗口标题
+    "font.size.caption": 11,
+    "font.size.body": 12,
+    "font.size.bodyLg": 13,
+    "font.size.section": 14,
+    "font.size.title": 22,
     "font.weight.regular": 400,
     "font.weight.medium": 500,
     "font.weight.semibold": 600,
@@ -139,25 +163,27 @@ FONT = {
 }
 
 CONTROL = {
-    "control.height.sm": 24,
-    "control.height": 28,
-    "control.height.lg": 32,
-    "control.padding.x": 10,
+    "control.height.sm": 26,
+    "control.height": 32,
+    "control.height.lg": 38,
+    "control.padding.x": 12,
     "control.slider.groove": 4,
-    "control.slider.handle": 14,
+    "control.slider.handle": 16,
     "control.focus.width": 2,
 }
 
 MOTION = {
-    "motion.fast": 120,   # hover / press
-    "motion.base": 160,   # 面板展开、状态切换
+    "motion.fast": 120,
+    "motion.base": 160,
     "motion.easing": "OutCubic",
 }
 
 
-def context() -> dict[str, str]:
-    """把令牌摊平成 ``{"color.bg.root": "#0A0A0A", ...}`` 供 QSS 模板替换。"""
+def context(mode: str = "light") -> dict[str, str]:
+    """把令牌摊平成 ``{"color.bg.root": "#F7F5F3", ...}`` 供 QSS 模板替换。"""
     values: dict[str, object] = {}
     for group in (SEMANTIC, SPACE, RADIUS, FONT, CONTROL, MOTION):
         values.update(group)
+    if mode == "dark":
+        values.update(DARK)
     return {key: str(value) for key, value in values.items()}

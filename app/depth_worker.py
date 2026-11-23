@@ -1,6 +1,7 @@
 import gc
 import json
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -247,39 +248,53 @@ def _fetch_file(repo_id, filename, dest, progress, should_stop):
 
     part = dest.with_name(dest.name + ".part")
     last_error = None
+    restart = False
     for endpoint in _ENDPOINTS:
         for _ in range(3):
             if should_stop():
                 return False
-            pos = part.stat().st_size if part.exists() else 0
-            headers = {"Range": f"bytes={pos}-"} if pos else {}
+            pos = part.stat().st_size if part.exists() and not restart else 0
+            headers = {"Accept-Encoding": "identity"}
+            if pos:
+                headers["Range"] = f"bytes={pos}-"
             try:
                 url = endpoint + f"/{repo_id}/resolve/main/{filename}"
                 with requests.get(url, headers=headers, stream=True, timeout=(15, 90)) as response:
-                    if response.status_code == 416 and part.exists():
-                        os.replace(part, dest)
-                        return True
+                    content_range = response.headers.get("Content-Range", "").strip()
+                    if response.status_code == 416:
+                        length = re.fullmatch(r"bytes \*/(\d+)", content_range, re.IGNORECASE)
+                        if length and pos > 0 and pos == int(length[1]):
+                            os.replace(part, dest)
+                            return True
+                        restart = True
+                        raise ValueError("无法确认续传文件长度，将重新下载")
                     response.raise_for_status()
 
-                    total = None
                     if response.status_code == 206:
-                        content_range = response.headers.get("Content-Range", "")
-                        if "/" in content_range:
-                            total = int(content_range.rsplit("/", 1)[1])
+                        span = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", content_range, re.IGNORECASE)
+                        if not span or int(span[1]) != pos or not pos <= int(span[2]) < int(span[3]):
+                            restart = True
+                            raise ValueError("服务器返回的续传区间不匹配，将重新下载")
+                        end, total = int(span[2]) + 1, int(span[3])
                     else:
                         # The server ignored our Range header; restart this file.
                         pos = 0
                         length = response.headers.get("Content-Length")
                         total = int(length) if length else None
+                        end = total
 
                     done = pos
                     last_report = 0.0
                     with open(part, "wb" if pos == 0 else "ab") as handle:
+                        restart = False
                         for chunk in response.iter_content(1024 * 256):
                             if should_stop():
                                 return False
                             if not chunk:
                                 continue
+                            if end is not None and done + len(chunk) > end:
+                                handle.truncate(pos)
+                                raise ValueError("服务器返回的数据超过声明的区间")
                             handle.write(chunk)
                             done += len(chunk)
                             now = time.time()
@@ -293,7 +308,7 @@ def _fetch_file(repo_id, filename, dest, progress, should_stop):
                     size = part.stat().st_size if part.exists() else 0
                     if size == 0:
                         last_error = "服务器返回了空文件"
-                    elif total is not None and size < total:
+                    elif total is not None and size != total:
                         last_error = f"连接中断（{_format_size(size)} / {_format_size(total)}）"
                     else:
                         os.replace(part, dest)
@@ -381,6 +396,7 @@ class _TransformersBackend:
         else:
             inputs = self.processor(**base)
 
+        inputs = inputs.to(self.model.device)
         with torch.no_grad():
             outputs = self.model(**inputs)
         return (
@@ -592,14 +608,14 @@ class DepthWorker(QThread):
                 return
             if getattr(sys, "frozen", False):
                 hint = (
-                    "当前是轻量版可执行文件，没有内置 AI 依赖。\n"
-                    "请改用「导入深度图」，或继续使用“中心对焦 / 手动焦点”。\n\n"
+                    "请检查 AI 模型、依赖和网络连接。轻量版可执行文件不包含 AI 依赖；"
+                    "可导入深度图，或使用中心对焦及手动焦点。\n\n"
                 )
             else:
                 hint = (
                     "请确认已安装 requirements-ai.txt 中的依赖，并且首次使用时可联网下载模型。\n"
-                    "DA3 模型另需按 README 的「Depth Anything 3」一节安装。\n"
-                    "也可以换用 Depth Anything V2，或继续使用“中心对焦/手动焦点”。\n\n"
+                    "DA3 模型需要另行安装依赖，具体步骤请参阅项目说明中的“Depth Anything 3”章节。\n"
+                    "也可使用 Depth Anything V2、中心对焦或手动焦点。\n\n"
                 )
             self.failed.emit(
                 f"无法运行 AI 深度估算（模型：{model_label(self.model_id)}）。\n\n"

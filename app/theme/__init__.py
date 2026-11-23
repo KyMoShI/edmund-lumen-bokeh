@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
+from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
 from . import tokens
 
@@ -59,40 +60,41 @@ def load_bundled_fonts() -> str:
     """注册 app/assets/fonts 下的字体，返回实际可用的家族名。"""
     if not FONT_DIR.is_dir():
         return tokens.FONT["font.family"]
+    selected = None
     for path in sorted(FONT_DIR.glob("*.ttf")):
         font_id = QFontDatabase.addApplicationFont(str(path))
         if font_id == -1:
             continue
         families = QFontDatabase.applicationFontFamilies(font_id)
-        if families:
-            return families[0]
-    return tokens.FONT["font.family"]
+        if families and path.name.startswith("SarasaGothicSC"):
+            selected = families[0]
+    return selected or tokens.FONT["font.family"]
 
 
 # --------------------------------------------------------------------------
 # 调色板
 # --------------------------------------------------------------------------
 
-def build_palette() -> QPalette:
-    c = tokens.SEMANTIC
+def build_palette(mode: str = "light") -> QPalette:
+    c = tokens.context(mode)
     palette = QPalette()
     role = QPalette.ColorRole
     group = QPalette.ColorGroup
 
     palette.setColor(role.Window, QColor(c["color.bg.root"]))
     palette.setColor(role.WindowText, QColor(c["color.text.primary"]))
-    palette.setColor(role.Base, QColor(c["color.bg.control"]))
-    palette.setColor(role.AlternateBase, QColor(c["color.bg.panel"]))
+    palette.setColor(role.Base, QColor(c["color.bg.panel"]))
+    palette.setColor(role.AlternateBase, QColor(c["color.bg.control"]))
     palette.setColor(role.ToolTipBase, QColor(c["color.bg.tooltip"]))
-    palette.setColor(role.ToolTipText, QColor(c["color.text.primary"]))
+    palette.setColor(role.ToolTipText, QColor(c["color.text.on.dark"]))
     palette.setColor(role.Text, QColor(c["color.text.primary"]))
-    palette.setColor(role.Button, QColor(c["color.bg.control"]))
+    palette.setColor(role.Button, QColor(c["color.bg.panel"]))
     palette.setColor(role.ButtonText, QColor(c["color.text.primary"]))
     palette.setColor(role.BrightText, QColor(c["color.text.primary"]))
     palette.setColor(role.Highlight, QColor(c["color.accent"]))
     palette.setColor(role.HighlightedText, QColor(c["color.on.accent"]))
     palette.setColor(role.PlaceholderText, QColor(c["color.text.disabled"]))
-    palette.setColor(role.Link, QColor(c["color.accent"]))
+    palette.setColor(role.Link, QColor(c["color.alt"]))
 
     for disabled_role in (
         role.WindowText, role.Text, role.ButtonText, role.Highlight,
@@ -106,27 +108,65 @@ def build_palette() -> QPalette:
 # QSS
 # --------------------------------------------------------------------------
 
-def _asset_values() -> dict[str, str]:
+def _asset_values(mode: str = "light") -> dict[str, str]:
     # PNG 而非 SVG：QSS 的 image: url(*.svg) 依赖 imageformats/qsvg 插件，
     # 部分 PySide6 安装没有该插件，会静默失效。
     return {
-        "asset.chevron": (ICON_DIR / "chevron-down.png").as_posix(),
-        "asset.check": (ICON_DIR / "check.png").as_posix(),
+        "asset.chevron": (ICON_DIR / ("chevron-down-dark.png" if mode == "dark" else "chevron-down.png")).as_posix(),
+        "asset.check": (ICON_DIR / ("check-dark.png" if mode == "dark" else "check.png")).as_posix(),
     }
 
 
-def render_qss() -> str:
+def render_qss(mode: str = "light") -> str:
     """渲染 QSS 模板；有未定义的占位符就直接报错，不要静默产出坏样式。"""
-    values = tokens.context()
-    values.update(_asset_values())
+    values = tokens.context(mode)
+    values.update(_asset_values(mode))
     text = QSS_TEMPLATE.read_text(encoding="utf-8")
     missing = sorted({m.group(1) for m in _PLACEHOLDER.finditer(text)} - values.keys())
     if missing:
         raise KeyError(f"QSS 模板里有未定义的令牌：{', '.join(missing)}")
-    return _PLACEHOLDER.sub(lambda m: values[m.group(1)], text)
+    rendered = _PLACEHOLDER.sub(lambda m: values[m.group(1)], text)
+    if mode == "light":
+        rendered += """
+        #PreviewSurface { background: #ffffff; border: 1px solid #ff4b49; border-radius: 0px; }
+        #PreviewSurface[empty="true"] { background: rgba(255, 255, 255, 150); }
+        #PreviewSurface[drag="true"] { border: 2px dashed #d92d20; }
+        QLabel[role="previewTag"] { background: #ef3b38; color: white; padding: 3px 9px; font-weight: 600; }
+        QLabel#EditorialMark { color: #1734e8; font-size: 86px; font-weight: 700; }
+        QFrame#EditorialBrand { background: #202020; }
+        QLabel#EditorialBrandText { color: white; font-size: 32px; font-weight: 700; }
+        QLabel#EditorialDiamond { color: white; font-size: 40px; font-weight: 700; }
+        #MainSplitter::handle:horizontal { background: transparent; }
+        QGroupBox { border: 1px solid #ffaaa6; border-radius: 10px; }
+        QPushButton[variant="primary"], QPushButton[variant="warm"] { border-radius: 7px; }
+        #ControlsScroll { background: #ffffff; border: 1px solid #ff7773; }
+        #OpenImageButton, #CompareImageButton, #ExportImageButton { min-width: 125px; min-height: 50px; padding-left: 22px; padding-right: 22px; font-size: 18px; font-weight: 700; }
+        """
+    else:
+        rendered += """
+        QLabel#EditorialMark { color: #F6D05D; font-size: 40px; font-weight: 700; }
+        QFrame#EditorialBrand { background: #F6D05D; }
+        QLabel#EditorialBrandText, QLabel#EditorialDiamond { color: #0A0A0A; font-size: 18px; font-weight: 700; }
+        """
+    return rendered
 
 
-def apply_theme(app) -> str:
+def add_card_shadow(widget, blur: int = 28, dy: int = 6, alpha: int = 26) -> None:
+    """给卡片加柔和投影（参考图里的悬浮卡片感）。
+
+    QSS 没有 box-shadow，只能用 QGraphicsDropShadowEffect。只用在固定数量的
+    卡片上，不要给列表里每一行加，否则重绘会明显变卡。
+    """
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(blur)
+    effect.setOffset(0, dy)
+    color = QColor("#8C7B6B")
+    color.setAlpha(alpha)
+    effect.setColor(color)
+    widget.setGraphicsEffect(effect)
+
+
+def apply_theme(app, mode: str = "light") -> str:
     """给 QApplication 装上主题，返回实际使用的字体家族名。"""
     app.setStyle("Fusion")
     family = load_bundled_fonts()
@@ -137,6 +177,6 @@ def apply_theme(app) -> str:
     font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
     app.setFont(font)
 
-    app.setPalette(build_palette())
-    app.setStyleSheet(render_qss())
+    app.setPalette(build_palette(mode))
+    app.setStyleSheet(render_qss(mode))
     return family

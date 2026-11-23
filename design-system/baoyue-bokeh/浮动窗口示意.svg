@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="550" viewBox="0 0 1320 550">
+  <rect width="1320" height="550" fill="#F5F7FC"/>
+  <g font-family="Sarasa Gothic SC" fill="#172238">
+    <text x="40" y="45" font-size="25" font-weight="bold">现有浮动窗口功能示意</text>
+    <text x="40" y="75" font-size="16" fill="#596579">卡片或预览区可从主窗口取出；此图解释交互，不代表新版外观。</text>
+
+    <text x="40" y="125" font-size="21" font-weight="bold">① 位于主窗口内</text>
+    <rect x="40" y="150" width="340" height="270" rx="12" fill="#FFF" stroke="#8B98AE"/>
+    <rect x="40" y="150" width="340" height="34" rx="12" fill="#E4EAF4"/>
+    <text x="58" y="173" font-size="15">主窗口</text>
+    <rect x="60" y="205" width="160" height="193" rx="6" fill="#EEF0F5"/>
+    <text x="100" y="303" font-size="17">原图区</text>
+    <rect x="234" y="205" width="126" height="193" rx="7" fill="#FFF" stroke="#001EFF" stroke-width="2"/>
+    <text x="251" y="258" font-size="17">效果图区</text>
+    <rect x="323" y="215" width="26" height="26" rx="4" fill="#001EFF"/>
+    <text x="328" y="235" font-size="20" fill="#FFF">↗</text>
+    <text x="40" y="454" font-size="17">鼠标移入后，点击右上角 ↗</text>
+
+    <path d="M397 285 H441 M430 275 L443 285 L430 295" fill="none" stroke="#001EFF" stroke-width="3"/>
+
+    <text x="466" y="125" font-size="21" font-weight="bold">② 在独立窗口中操作</text>
+    <rect x="466" y="150" width="340" height="270" rx="12" fill="#FFF" stroke="#8B98AE"/>
+    <rect x="466" y="150" width="340" height="34" rx="12" fill="#E4EAF4"/>
+    <text x="484" y="173" font-size="15">主窗口</text>
+    <rect x="486" y="205" width="160" height="193" rx="6" fill="#EEF0F5"/>
+    <text x="526" y="303" font-size="17">原图区</text>
+    <rect x="660" y="205" width="126" height="193" rx="7" fill="#F1F4FB" stroke="#B4BED0" stroke-dasharray="6 5"/>
+    <text x="674" y="320" font-size="14">原位保留占位</text>
+    <rect x="666" y="344" width="114" height="32" rx="5" fill="#FFF" stroke="#8B98AE"/>
+    <text x="695" y="365" font-size="14">恢复原位</text>
+    <rect x="634" y="192" width="190" height="112" rx="7" fill="#FFF" stroke="#001EFF" stroke-width="2"/>
+    <rect x="634" y="192" width="190" height="28" rx="7" fill="#E1E7FF"/>
+    <text x="646" y="212" font-size="14">效果图</text>
+    <rect x="794" y="195" width="25" height="21" rx="3" fill="#FFE2DF"/>
+    <text x="801" y="211" font-size="16" fill="#BE3127">×</text>
+    <text x="676" y="260" font-size="16">独立窗口</text>
+    <path d="M808 290 l8 -8 M801 290 l15 -15" stroke="#001EFF"/>
+    <text x="466" y="454" font-size="17">拖动标题栏移动，拖动边缘调整大小</text>
+
+    <path d="M840 285 H884 M873 275 L886 285 L873 295" fill="none" stroke="#001EFF" stroke-width="3"/>
+
+    <text x="910" y="125" font-size="21" font-weight="bold">③ 返回原位置</text>
+    <rect x="910" y="150" width="340" height="270" rx="12" fill="#FFF" stroke="#8B98AE"/>
+    <rect x="910" y="150" width="340" height="34" rx="12" fill="#E4EAF4"/>
+    <text x="928" y="173" font-size="15">主窗口</text>
+    <rect x="930" y="205" width="160" height="193" rx="6" fill="#EEF0F5"/>
+    <text x="970" y="303" font-size="17">原图区</text>
+    <rect x="1104" y="205" width="126" height="193" rx="7" fill="#FFF" stroke="#001EFF" stroke-width="2"/>
+    <text x="1121" y="303" font-size="17">效果图区</text>
+    <text x="910" y="454" font-size="17">关闭独立窗口，或点击“恢复原位”</text>
+    <text x="40" y="515" font-size="17" fill="#596579">这一操作也适用于深度图和控制卡片；归位后保留已有图片及参数。</text>
+  </g>
+</svg>

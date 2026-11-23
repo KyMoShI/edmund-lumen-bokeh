@@ -1,12 +1,27 @@
 from dataclasses import dataclass
+from functools import lru_cache
 
 import cv2
 import numpy as np
+
+if __package__:
+    from .bokeh_sources import reconstruct_bokeh_sources
+else:
+    from bokeh_sources import reconstruct_bokeh_sources
 
 # Depth modes, kept in sync with the combo box order in main.py.
 MODE_AI = 0
 MODE_CENTER = 1
 MODE_MANUAL = 2
+
+
+class RenderCancelled(Exception):
+    """A preview was superseded before it completed."""
+
+
+def _check_cancelled(should_cancel):
+    if should_cancel is not None and should_cancel():
+        raise RenderCancelled()
 
 
 def _fast_blur(image, sigma):
@@ -38,6 +53,7 @@ class EngineSettings:
     bokeh_density: float = 0.55
     bokeh_size: float = 1.0
     bokeh_aa: int = 1
+    full_luminance_bokeh: bool = False
     spherical: float = 0.0
     cat_eye: float = 0.0
     subject_expand: float = 0.0
@@ -88,16 +104,21 @@ class BokehEngine:
             # Center mode: everything inside the focus radius stays sharp and
             # the blur ramps up towards the corners. This matches the label
             # "焦点深度" much better than a sharp ring at abs(depth - focus).
-            focus = float(np.clip(settings.focus, 0.0, 0.98))
+            focus_limit = 1.0 if settings.full_luminance_bokeh else 0.98
+            focus = float(np.clip(settings.focus, 0.0, focus_limit))
             coc = np.clip((depth - focus) / max(1.0 - focus, 1e-3), 0, 1)
             coc = np.clip(coc * (0.45 + settings.depth_strength * 1.35), 0, 1)
         else:
             # AI/manual mode: a real focus plane, blur on both sides of it.
             coc = np.abs(depth - settings.focus)
             coc = np.clip(coc * (1.0 + settings.depth_strength * 1.6), 0, 1)
-        # Wider aperture => stronger defocus. f/1.2 strongest, f/8 weakest.
-        aperture_gain = np.clip((8.0 / max(settings.aperture, 1.2)) ** 0.42 / 2.3, 0.35, 2.5)
-        return np.clip(coc * settings.blur_strength * aperture_gain, 0, 1)
+        aperture_floor = 0.95 if settings.full_luminance_bokeh else 1.2
+        gain_floor = 0.30 if settings.full_luminance_bokeh else 0.35
+        aperture_gain = np.clip((8.0 / max(settings.aperture, aperture_floor)) ** 0.42 / 2.3, gain_floor, 2.5)
+        # Above the nominal range, increase kernel size without clipping more
+        # pixels to the same depth or discarding extra in-focus pixels.
+        blur = min(settings.blur_strength, 1.0) if settings.full_luminance_bokeh else settings.blur_strength
+        return np.clip(coc * blur * aperture_gain, 0, 1)
 
     @staticmethod
     def _aperture_points(cx, cy, rx, ry, blade_count, rotation):
@@ -125,7 +146,7 @@ class BokehEngine:
             rounded.append(p0 * cut + p1 * (1.0 - cut))
         return np.asarray(rounded)
 
-    def _bokeh_overlay(self, blurred, source, coc, settings, sharp=None):
+    def _bokeh_overlay(self, blurred, source, coc, settings, sharp=None, should_cancel=None):
         """Render distinct aperture-shaped bokeh discs on top of the blur.
 
         The old implementation dilated highlights and Gaussian-blurred them,
@@ -154,8 +175,9 @@ class BokehEngine:
         f = small.astype(np.float32) / 255.0
         lum = 0.2126 * f[:, :, 0] + 0.7152 * f[:, :, 1] + 0.0722 * f[:, :, 2]
 
+        full_range = settings.full_luminance_bokeh
         threshold = 0.72
-        mask = np.clip((lum - threshold) / max(1.0 - threshold, 1e-6), 0, 1)
+        mask = np.sqrt(np.clip(lum, 0, 1)) if full_range else np.clip((lum - threshold) / max(1.0 - threshold, 1e-6), 0, 1)
         mask *= np.clip(coc_s * 1.4, 0, 1)
         if float(mask.max()) < 0.02:
             return blurred
@@ -181,7 +203,7 @@ class BokehEngine:
         # only locally prominent points become visible bokeh discs. The NMS
         # radius scales with resolution so one upscaled light does not produce
         # several additive discs (which previously made exports too bright).
-        kernel_size = max(5, int(round(7 * radius_scale)))
+        kernel_size = max(5, int(round((13 if full_range else 7) * radius_scale)))
         if kernel_size % 2 == 0:
             kernel_size += 1
         kernel = np.ones((kernel_size, kernel_size), np.float32)
@@ -199,7 +221,7 @@ class BokehEngine:
             xi = min(sw - 1, max(0, int(round(cx))))
             yi = min(sh - 1, max(0, int(round(cy))))
             weight = float(mask[yi, xi] * max(prominence[yi, xi], 0.15))
-            if weight > 0.006 + 0.04 * (1.0 - density):
+            if weight > (0.001 if full_range else 0.006 + 0.04 * (1.0 - density)):
                 peaks.append((weight, float(cx), float(cy)))
         if not peaks:
             return blurred
@@ -223,10 +245,14 @@ class BokehEngine:
         # the render resolution so a 24 MP export has the same relative bokeh
         # size as the preview instead of tiny discs.
         base_radius = (2.5 + 26.0 * max(bokeh, 0.12)) * radius_scale * max(settings.bokeh_size, 0.05)
+        if full_range:
+            base_radius *= 0.5 + settings.blur_strength
         aperture_factor = (1.4 / max(settings.aperture, 1.2)) ** 0.45
         layer = np.zeros_like(f)
 
         for index, (weight, cx, cy) in enumerate(peaks):
+            if index % 16 == 0:
+                _check_cancelled(should_cancel)
             xi = min(sw - 1, max(0, int(round(cx))))
             yi = min(sh - 1, max(0, int(round(cy))))
             defocus = float(np.clip(coc_s[yi, xi] * 1.3, 0.0, 1.0))
@@ -259,7 +285,7 @@ class BokehEngine:
             by = min(bh - 1, max(0, int(cy * bh / sh)))
             bg_color = bg_color_map[by, bx]
             bg_peak = float(bg_color.max())
-            if bg_peak > 0.08:
+            if bg_peak > 0.08 and not full_range:
                 # Normalise to preserve hue but not darken the bokeh: brightness
                 # still comes from the highlight, colour comes from the scene.
                 bg_norm = np.clip(bg_color / bg_peak, 0.0, 1.5)
@@ -270,9 +296,13 @@ class BokehEngine:
                 color = source_color * (1.0 - bg_mix) + bg_norm * bg_mix
             else:
                 color = source_color
-            color = np.clip(color * 0.85 + 0.15, 0.0, 1.0)
+            color = np.clip(color if full_range else color * 0.85 + 0.15, 0.0, 1.0)
 
             strength = float(np.clip(weight * (0.35 + 0.8 * max(bokeh, 0.2)), 0.0, 1.0))
+            if full_range:
+                # Visible aperture contours for already-blurred highlights;
+                # intensity remains tied continuously to their source light.
+                strength = float(np.clip(weight * (2.0 + 2.0 * bokeh), 0.0, 0.55))
             strength *= 1.0 - 0.20 * edge * edge  # mild optical vignetting
             if rolloff:
                 # Highlight overflow compensation: sources brighter than the
@@ -281,7 +311,7 @@ class BokehEngine:
                 peak_luminance = float(lum[yi, xi])
                 if peak_luminance > rolloff_at:
                     over = (peak_luminance - rolloff_at) / max(1.0 - rolloff_at, 1e-3)
-                    strength *= 1.0 - 0.85 * min(1.0, over)
+                    strength *= 1.0 - (0.45 if full_range else 0.85) * min(1.0, over)
 
             # Draw into a small local patch and ADD it to the layer. Using
             # fillPoly directly on the shared layer would overwrite earlier
@@ -397,6 +427,12 @@ class BokehEngine:
             layer_u8 = cv2.multiply(layer_u8, bg_u8, scale=1.0 / 255.0)
         final_sigma = max(0.6, 0.6 * radius_scale * scale)
         layer_u8 = cv2.GaussianBlur(layer_u8, (0, 0), final_sigma)
+        if full_range:
+            # Screen blend is bounded, unlike additive compositing. The
+            # full-image PSF below still carries light at every brightness.
+            base = blurred.astype(np.float32) / 255.0
+            light = layer_u8.astype(np.float32) / 255.0
+            return np.clip((base + light * (1.0 - base)) * 255.0, 0, 255).astype(np.uint8)
         return cv2.add(blurred, layer_u8)
 
     @staticmethod
@@ -459,7 +495,198 @@ class BokehEngine:
         return kernel / total if total > 0 else kernel
 
     @staticmethod
-    def _disc_blur_levels(image, radii, blade_count, spherical=0.0):
+    @lru_cache(maxsize=160)
+    def _wavefront_kernel(radius, blade_count, spherical, field_x=0.0, field_y=0.0, defocus_sign=1):
+        """Approximate an incoherent PSF from a defocused complex pupil.
+
+        Wavefront coefficients are illustrative, not a calibrated lens model.
+        """
+        n = 256
+        yy, xx = np.mgrid[:n, :n].astype(np.float32)
+        pupil_radius = 80
+        x, y = (xx - n / 2) / pupil_radius, (yy - n / 2) / pupil_radius
+        rho2 = x*x + y*y
+        if blade_count < 3:
+            pupil = (rho2 <= 1.0).astype(np.float32)
+        else:
+            pupil = np.zeros((n, n), np.float32)
+            points = BokehEngine._aperture_points(n/2, n/2, pupil_radius, pupil_radius, blade_count, 0)
+            cv2.fillPoly(pupil, [np.round(points).astype(np.int32)], 1.0)
+        # A shifted barrel opening clips the off-axis pupil. Center the
+        # transmitted footprint so the approximation doesn't shift the scene.
+        pupil *= ((x - field_x)**2 + (y - field_y)**2 <= 1.0)
+        waves = float(np.clip(radius / 2.5, 2.5, 13.0))
+        aberration = np.clip(spherical, -2, 2) * rho2 * (1.0 - 0.5 * rho2)
+        # Keep the lens aberration fixed while defocus crosses the focus plane.
+        phase = 2.0 * np.pi * waves * (defocus_sign * rho2 + 0.45 * aberration)
+        # The phase slope at the pupil rim sets the geometric footprint.
+        # Include diffraction outside that radius before reducing to pixels.
+        half = min(n // 2 - 1, int(np.ceil(2.0 * waves * n / pupil_radius)) + 10)
+        center = n // 2
+        psf = np.zeros((2 * half + 1, 2 * half + 1), np.float32)
+        # Approximate a broadband source. Map each wavelength's diffraction
+        # pattern to the same sensor coordinates before summing intensities.
+        for wavelength, weight in ((0.85, 0.25), (1.0, 0.50), (1.17, 0.25)):
+            angle = phase / wavelength
+            field = cv2.merge((pupil * np.cos(angle), pupil * np.sin(angle)))
+            # Shifting the pupil to the origin changes Fourier phase only,
+            # so it can be omitted when computing just intensity.
+            spectrum = cv2.dft(field)
+            power = cv2.mulSpectrums(spectrum, spectrum, 0, conjB=True)
+            intensity = np.fft.fftshift(power[..., 0])
+            transform = cv2.getRotationMatrix2D((center, center), 0, wavelength)
+            transform[:, 2] -= center - half
+            band = cv2.warpAffine(intensity, transform, psf.shape[::-1], flags=cv2.INTER_LINEAR)
+            psf += band * (weight / max(float(band.sum()), 1e-12))
+        if field_x or field_y:
+            mass = cv2.moments(psf)
+            dx = half - mass["m10"] / mass["m00"]
+            dy = half - mass["m01"] / mass["m00"]
+            psf = cv2.warpAffine(psf, np.float32([[1, 0, dx], [0, 1, dy]]), psf.shape[::-1])
+        psf = cv2.resize(psf, (2*radius+1, 2*radius+1), interpolation=cv2.INTER_AREA)
+        return psf / max(float(psf.sum()), 1e-12)
+
+    def _render_wavefront(self, linear, signed_coc, background, radius, settings, should_cancel=None):
+        """Spread radiance over sampled depth/field PSFs in linear light."""
+        coc = np.abs(signed_coc)
+        radiance = reconstruct_bokeh_sources(linear, coc, background, radius, settings)
+        _check_cancelled(should_cancel)
+        h, w = coc.shape
+        steps = 6
+        depth = signed_coc * steps
+        sharp_weight = np.maximum(1.0 - np.abs(depth), 0.0)
+        far = np.empty((h, w, 4), np.float32)
+        far[..., :3] = linear * sharp_weight[..., None]
+        far[..., 3] = sharp_weight
+        near = np.zeros_like(far) if np.any(depth > 0) else None
+
+        cat_eye = float(np.clip(settings.cat_eye, 0.0, 1.6))
+        if cat_eye > 0:
+            x = np.linspace(-1, 1, w, dtype=np.float32) if w > 1 else np.zeros(1, np.float32)
+            y = np.linspace(-1, 1, h, dtype=np.float32) if h > 1 else np.zeros(1, np.float32)
+            fields = [
+                (fx, fy, np.maximum(1 - abs(x - fx), 0), np.maximum(1 - abs(y - fy), 0))
+                for fy in (-1, 0, 1) for fx in (-1, 0, 1)
+            ]
+        else:
+            fields = [(0, 0, np.ones(w, np.float32), np.ones(h, np.float32))]
+
+        # Record each field's nonzero support once instead of scanning it for
+        # every radius. A layer can occupy only a small part of that field.
+        regions = []
+        for fx, fy, wx, wy in fields:
+            xs, ys = np.flatnonzero(wx), np.flatnonzero(wy)
+            if xs.size and ys.size:
+                regions.append((fx, fy, wx, wy, xs[0], xs[-1] + 1, ys[0], ys[-1] + 1))
+        source = np.empty_like(far)
+        for sign, output in ((-1, far), (1, near)):
+            if output is None:
+                continue
+            for i in range(1, steps + 1):
+                depth_weight = np.maximum(1.0 - np.abs(depth - sign * i), 0.0)
+                if sign > 0:
+                    depth_weight *= background
+                dx, dy, dw, dh = cv2.boundingRect((depth_weight > 0).astype(np.uint8))
+                if not dw:
+                    continue
+                r = max(1, int(round(radius * i / steps)))
+                for fx, fy, wx, wy, left, right, top, bottom in regions:
+                    _check_cancelled(should_cancel)
+                    x0, x1 = max(dx, left), min(dx + dw, right)
+                    y0, y1 = max(dy, top), min(dy + dh, bottom)
+                    if x0 >= x1 or y0 >= y1:
+                        continue
+                    # Include the kernel's complete reach, so cropping removes
+                    # only work on zeros, with the same true image borders.
+                    tx, ty, tw, th = cv2.boundingRect(
+                        (depth_weight[y0:y1, x0:x1] > 0).astype(np.uint8)
+                    )
+                    if not tw:
+                        continue
+                    x0, y0 = x0 + tx, y0 + ty
+                    sx = slice(max(0, x0 - r), min(w, x0 + tw + r))
+                    sy = slice(max(0, y0 - r), min(h, y0 + th + r))
+                    patch = source[:sy.stop - sy.start, :sx.stop - sx.start]
+                    weight = patch[..., 3]
+                    np.multiply(depth_weight[sy, sx], wy[sy, None], out=weight)
+                    weight *= wx[None, sx]
+                    np.multiply(radiance[sy, sx], weight[..., None], out=patch[..., :3])
+                    kernel = self._wavefront_kernel(
+                        r, settings.bokeh_blades, settings.spherical, fx * cat_eye * 0.55, fy * cat_eye * 0.55,
+                        defocus_sign=-sign,
+                    )
+                    output[sy, sx] += cv2.filter2D(
+                        patch, -1, kernel[::-1, ::-1], borderType=cv2.BORDER_REPLICATE
+                    )
+
+        # Normalized convolution keeps a flat background stable across changes
+        # in depth and field. Within each layer light contributions add.
+        weight = far[..., 3:]
+        far_color = np.where(weight > 1e-6, far[..., :3] / np.maximum(weight, 1e-6), linear)
+        if near is None:
+            return far_color, None, None
+        weight = near[..., 3]
+        near_color = near[..., :3] / np.maximum(weight[..., None], 1e-6)
+        return far_color, near_color, np.clip(weight, 0.0, 1.0)
+
+    @staticmethod
+    def _encode_srgb(linear):
+        linear = np.clip(linear, 0.0, 1.0)
+        return np.where(linear <= 0.0031308, 12.92 * linear,
+                        1.055 * linear ** (1.0 / 2.4) - 0.055) * 255.0
+
+    def _composite_wavefront(
+        self, image, sharp, far, near, near_alpha, protect_subject, return_layers, should_cancel=None,
+    ):
+        """Composite far, focal and near layers and keep the export mask consistent."""
+        h, w = sharp.shape
+        needs_resize = far.shape[:2] != (h, w)
+        small_alpha = near_alpha
+        if needs_resize and near is not None:
+            near_alpha = cv2.resize(small_alpha, (w, h), interpolation=cv2.INTER_LINEAR)
+        final = np.empty_like(image)
+        effect = np.empty_like(image) if return_layers else None
+        alpha = np.empty((h, w), np.uint8) if return_layers else None
+        for c in range(3):
+            far_plane = far[..., c]
+            near_plane = near[..., c] if near is not None else None
+            if needs_resize:
+                far_plane = cv2.resize(far_plane, (w, h), interpolation=cv2.INTER_LINEAR)
+                if near_plane is not None:
+                    # Resize premultiplied color to avoid dark foreground edges.
+                    near_plane = cv2.resize(near_plane * small_alpha, (w, h), interpolation=cv2.INTER_LINEAR)
+            # Limit full-resolution float scratch space to one channel and
+            # encode/blend only a strip at a time, including for layer export.
+            for start in range(0, h, 256):
+                _check_cancelled(should_cancel)
+                rows = slice(start, min(h, start + 256))
+                sharp_rows = sharp[rows]
+                far_color = self._encode_srgb(far_plane[rows])
+                if near_plane is None:
+                    focal_alpha = sharp_rows
+                    premul = far_color * (1.0 - focal_alpha)
+                else:
+                    coverage = near_alpha[rows]
+                    near_rows = near_plane[rows]
+                    if needs_resize:
+                        near_rows = near_rows / np.maximum(coverage, 1e-6)
+                    if protect_subject:
+                        coverage = coverage * (1.0 - sharp_rows)
+                    focal_alpha = sharp_rows * (1.0 - coverage)
+                    premul = far_color * (1.0 - coverage) * (1.0 - sharp_rows)
+                    premul += self._encode_srgb(near_rows) * coverage
+                final[rows, :, c] = np.clip(np.rint(premul + image[rows, :, c] * focal_alpha), 0, 255)
+                if effect is not None:
+                    effect_alpha = 1.0 - focal_alpha
+                    effect[rows, :, c] = np.clip(np.rint(premul / np.maximum(effect_alpha, 1e-6)), 0, 255)
+                    if c == 0:
+                        alpha[rows] = np.rint(effect_alpha * 255)
+        if effect is not None:
+            return final, effect, alpha
+        return final
+
+    @staticmethod
+    def _disc_blur_levels(image, radii, blade_count, spherical=0.0, should_cancel=None):
         """Convolve the image with aperture-shaped PSFs at several radii.
 
         Uses a single padded FFT of the image, then one inverse FFT per radius,
@@ -485,6 +712,7 @@ class BokehEngine:
 
         results = []
         for radius in radii:
+            _check_cancelled(should_cancel)
             kernel = BokehEngine._disc_kernel(radius, blade_count, spherical)
             kh, kw = kernel.shape
             kernel_padded = np.zeros((fh, fw), dtype=np.float32)
@@ -529,7 +757,8 @@ class BokehEngine:
             out[unsafe] = mean
         return out
 
-    def process(self, image, depth, settings, mode=MODE_AI, return_layers=False):
+    def process(self, image, depth, settings, mode=MODE_AI, return_layers=False, *, should_cancel=None):
+        _check_cancelled(should_cancel)
         if image is None:
             return None
 
@@ -546,6 +775,12 @@ class BokehEngine:
                 depth = (depth - dmin) / (dmax - dmin)
 
         coc = self._make_coc(depth, settings, one_sided=center_mode)
+        full_range = bool(settings.full_luminance_bokeh)
+        if full_range and not np.any(coc):
+            if return_layers:
+                return image.copy(), np.zeros_like(image), np.zeros((h, w), np.uint8)
+            return image.copy()
+        _check_cancelled(should_cancel)
 
         # Soft mask of the in-focus subject. It must not be allowed to
         # contribute colour to the defocused background, otherwise a full-frame
@@ -573,7 +808,7 @@ class BokehEngine:
             sharp = cv2.GaussianBlur(
                 sharp.astype(np.float32), (0, 0), sigmaX=feather * short_side * 0.010
             )
-        sharp = np.clip(sharp, 0.0, 1.0)
+        np.clip(sharp, 0.0, 1.0, out=sharp)
 
         # Remove a small margin around the subject from the background plate as
         # well; otherwise antialiased subject-edge pixels leak a coloured fringe
@@ -583,20 +818,47 @@ class BokehEngine:
             sharp,
             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (expand * 2 + 1, expand * 2 + 1)),
         )
-        protect = np.clip(protect, 0.0, 1.0)
-        background = 1.0 - protect
+        np.clip(protect, 0.0, 1.0, out=protect)
+        _check_cancelled(should_cancel)
 
         # Defocused background is low-frequency: build it at a bounded
         # resolution, then put the full-resolution sharp subject back on top.
         scale = min(1.0, 1000.0 / max(h, w))
-        if scale < 1.0:
-            sw, sh = max(1, int(w * scale)), max(1, int(h * scale))
+        sw, sh = max(1, int(w * scale)), max(1, int(h * scale))
+        if full_range:
+            signed_coc = -coc if center_mode else np.copysign(coc, depth - settings.focus)
+            del depth, coc
+            values = np.arange(256, dtype=np.float32) / 255.0
+            lut = np.where(values <= 0.04045, values / 12.92, ((values + 0.055) / 1.055) ** 2.4)
+            if scale < 1.0:
+                # Decode before area averaging to preserve highlight energy.
+                # Convert one channel at a time to avoid a full float RGB copy.
+                small = np.empty((sh, sw, 3), np.float32)
+                for c in range(3):
+                    _check_cancelled(should_cancel)
+                    plane = cv2.LUT(image[..., c], lut)
+                    small[..., c] = cv2.resize(plane, (sw, sh), interpolation=cv2.INTER_AREA)
+                    del plane
+                coc_s = cv2.resize(signed_coc, (sw, sh), interpolation=cv2.INTER_AREA)
+            else:
+                small, coc_s = cv2.LUT(image, lut), signed_coc
+            del signed_coc
+        elif scale < 1.0:
             small = cv2.resize(image, (sw, sh), interpolation=cv2.INTER_AREA)
             coc_s = cv2.resize(coc, (sw, sh), interpolation=cv2.INTER_AREA)
-            bg_s = cv2.resize(background, (sw, sh), interpolation=cv2.INTER_AREA)
         else:
-            sw, sh = w, h
-            small, coc_s, bg_s = image, coc, background
+            small, coc_s = image, coc
+
+        if scale < 1.0:
+            if full_range:
+                np.subtract(1.0, protect, out=protect)
+                bg_s = cv2.resize(protect, (sw, sh), interpolation=cv2.INTER_AREA)
+            else:
+                bg_s = cv2.resize(1.0 - protect, (sw, sh), interpolation=cv2.INTER_AREA)
+        else:
+            bg_s = 1.0 - protect
+        if full_range:
+            del protect
 
         # Shrink the background weight: this removes the partially weighted
         # subject-edge pixels that would otherwise tint the bokeh.
@@ -609,7 +871,7 @@ class BokehEngine:
         max_radius = int(np.clip(base_radius * resolution_scale, 2, 65 * resolution_scale))
         radius_small = max(1.0, max_radius * scale)
 
-        small_f = small.astype(np.float32)
+        small_f = small.astype(np.float32, copy=False)
         # Build one background-only clean plate: the sharp subject is replaced
         # by a smooth extrapolation of the surrounding background. Ordinary
         # Gaussian blurs can then be used at every scale without ever pulling
@@ -626,25 +888,36 @@ class BokehEngine:
         fill = cv2.resize(fill, (sw, sh), interpolation=cv2.INTER_LINEAR)
         clean = small_f * bg_s[..., None] + fill * (1.0 - bg_s)[..., None]
 
-        result_small = small_f.copy()
-        # Defocus is a convolution with the aperture PSF, not a Gaussian: this
-        # is what gives out-of-focus highlights and background edges their
-        # polygonal/round shape instead of a soft gaussian halo.
-        blade_count = int(settings.bokeh_blades)
-        levels = (0.40, 0.70, 1.00)
-        radii = [max(1.0, radius_small * level) for level in levels]
-        blurred_levels = self._disc_blur_levels(
-            clean, radii, blade_count, float(getattr(settings, "spherical", 0.0))
-        )
-
-        for level, blurred in zip(levels, blurred_levels):
-            alpha = np.clip((coc_s - (1.0 - level) * 0.20) / max(level + 0.05, 1e-3), 0, 1)
-            if float(alpha.max()) < 1e-3:
-                continue
-            alpha = cv2.GaussianBlur(alpha.astype(np.float32), (0, 0), 1.0)
-            inv = (1.0 - alpha)[..., None]
-            result_small *= inv
-            result_small += blurred * alpha[..., None]
+        if full_range:
+            # Treat the size control as footprint area in this mode so the
+            # radius grows with its square root. Large settings still allow
+            # overlapping discs without overwhelming the entire background.
+            size_factor = np.sqrt(max(settings.bokeh_size, 0.0)) * (0.82 + 0.36 * settings.bokeh_strength)
+            # CoC already includes aperture and blur strength. Applying them
+            # again here would make moderate settings produce tiny discs.
+            radius_at_1000 = 26.0 * size_factor * max(1.0, settings.blur_strength)
+            # Keep combined extremes bounded without a hard plateau.
+            if radius_at_1000 > 80.0:
+                radius_at_1000 = 80.0 + 48.0 * -np.expm1((80.0 - radius_at_1000) / 48.0)
+            optical_radius = radius_at_1000 * max(sw, sh) / 1000.0
+            far, near, near_alpha = self._render_wavefront(clean, coc_s, bg_s, optical_radius, settings, should_cancel)
+            return self._composite_wavefront(
+                image, sharp, far, near, near_alpha, settings.protect_subject, return_layers, should_cancel,
+            )
+        else:
+            result_small = small_f.copy()
+            levels = (0.40, 0.70, 1.00)
+            radii = [max(1.0, radius_small * level) for level in levels]
+            blurred_levels = self._disc_blur_levels(
+                clean, radii, settings.bokeh_blades, settings.spherical, should_cancel,
+            )
+            for level, blurred in zip(levels, blurred_levels):
+                alpha = np.clip((coc_s - (1.0 - level) * 0.20) / max(level + 0.05, 1e-3), 0, 1)
+                if float(alpha.max()) < 1e-3:
+                    continue
+                alpha = cv2.GaussianBlur(alpha.astype(np.float32), (0, 0), 1.0)
+                result_small *= (1.0 - alpha)[..., None]
+                result_small += blurred * alpha[..., None]
 
         if scale < 1.0:
             result = cv2.resize(result_small, (w, h), interpolation=cv2.INTER_LINEAR)
@@ -653,7 +926,8 @@ class BokehEngine:
 
         # Keep the background/effect plate before putting the sharp subject back.
         background_u8 = np.clip(result, 0, 255).astype(np.uint8)
-        effect = self._bokeh_overlay(background_u8, image, coc, settings, protect)
+        _check_cancelled(should_cancel)
+        effect = self._bokeh_overlay(background_u8, image, coc, settings, protect, should_cancel)
 
         final = effect.astype(np.float32)
         final *= (1.0 - sharp)[..., None]

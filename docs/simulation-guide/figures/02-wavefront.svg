@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1440" height="1060" viewBox="0 0 1440 1060">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#60779E" stroke-width="1.5"/></marker></defs>
+<rect width="1440" height="1060" fill="#F6F8FC"/>
+<g font-family="Sarasa Gothic SC">
+<text x="32" y="54" font-size="33" fill="#19273E" font-weight="700" text-anchor="start">02  高性能模式：从源分布到点扩散函数</text>
+<text x="32" y="93" font-size="18" fill="#53647B" font-weight="400" text-anchor="start">局部反光估算与全亮度扩散分开处理，随后进入同一卷积路径</text>
+<rect x="32" y="140" width="640" height="150" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="50" y="160" width="5" height="25" rx="2" fill="#2346E8"/>
+<text x="68" y="181" font-size="23" fill="#2346E8" font-weight="700" text-anchor="start">线性背景底图</text>
+<text x="56" y="218" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">sRGB 解码先于区域平均，保留缩小时的亮度贡献</text>
+<text x="56" y="247" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">背景外推减少主体颜色向失焦区域泄漏</text>
+<polyline points="352,290 352,340" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="352,340 346.0,328.0 358.0,328.0" fill="#60779E"/>
+<rect x="32" y="340" width="640" height="260" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="50" y="360" width="5" height="25" rx="2" fill="#2346E8"/>
+<text x="68" y="381" font-size="23" fill="#2346E8" font-weight="700" text-anchor="start">局部紧凑反光源估算</text>
+<text x="56" y="418" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">多尺度局部对比度 → 连通区域 → 尺寸与形状筛选</text>
+<text x="56" y="447" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">将部分正残差光量重分布到较小的源足迹</text>
+<text x="56" y="476" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">根据输入峰值估算有限的额外亮度</text>
+<text x="56" y="505" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">高光补偿抑制额外估算增益，不删除暗部</text>
+<text x="56" y="534" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">普通纹理与扩展光源仍保留并参与扩散</text>
+<rect x="736" y="140" width="672" height="190" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="754" y="160" width="5" height="25" rx="2" fill="#247B64"/>
+<text x="772" y="181" font-size="23" fill="#247B64" font-weight="700" text-anchor="start">复数光瞳：形状、视场与相位</text>
+<text x="760" y="218" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">A：圆形 / 多边形光圈，与离轴偏移开口求交</text>
+<text x="760" y="247" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">φ：有符号离焦相位 + 球差近似相位</text>
+<text x="760" y="276" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">P = A · exp(iφ)；此处没有具体镜头处方</text>
+<polyline points="1072,330 1072,390" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="1072,390 1066.0,378.0 1078.0,378.0" fill="#60779E"/>
+<rect x="736" y="390" width="672" height="210" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="754" y="410" width="5" height="25" rx="2" fill="#247B64"/>
+<text x="772" y="431" font-size="23" fill="#247B64" font-weight="700" text-anchor="start">宽谱 PSF：傅里叶强度响应</text>
+<text x="760" y="468" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">对 0.85 / 1.00 / 1.17 三个相对波长分别计算</text>
+<text x="760" y="497" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">PSFλ = |DFT(Pλ)|²，重采样到同一坐标</text>
+<text x="760" y="526" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">权重 0.25 / 0.50 / 0.25；核总和归一化为 1</text>
+<text x="760" y="555" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">离轴核质心回正，再缩放到目标核半径</text>
+<polyline points="352,600 352,670" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="352,670 346.0,658.0 358.0,658.0" fill="#60779E"/>
+<polyline points="1072,600 1072,670" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="1072,670 1066.0,658.0 1078.0,658.0" fill="#60779E"/>
+<rect x="32" y="670" width="1376" height="220" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="50" y="690" width="5" height="25" rx="2" fill="#2346E8"/>
+<text x="68" y="711" font-size="23" fill="#2346E8" font-weight="700" text-anchor="start">按离焦档位与视场权重分配源贡献</text>
+<text x="56" y="748" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">焦内直通 + 焦后 6 档 + 焦前 6 档；相邻档位采用三角权重插值。</text>
+<text x="56" y="777" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">猫眼关闭时使用轴上核；开启时最高使用 3 × 3 视场采样，按位置权重插值。</text>
+<text x="56" y="806" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">RGB 与覆盖权重组成四通道一起卷积；按累计覆盖权重归一化颜色。</text>
+<text x="56" y="835" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">只计算有效贡献区域并保留完整核边界；缓存生成的波前核。</text>
+<text x="32" y="999" font-size="17" fill="#53647B" font-weight="400" text-anchor="start">核归一化控制扩散分布；额外反光亮度估算使整个流程不能表述为严格光量守恒。</text>
+<text x="32" y="1026" font-size="17" fill="#53647B" font-weight="400" text-anchor="start">这是基于图像和相对深度的近似，没有逐面光线追迹、镜头透过率标定或完整光谱响应。</text>
+</g></svg>

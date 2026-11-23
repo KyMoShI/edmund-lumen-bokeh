@@ -1,12 +1,9 @@
 /* ============================================================================
  * 「伯爵大光圈」QSS 模板
  * ----------------------------------------------------------------------------
+ * 风格：浅色纸面 + 红/蓝点缀 + 圆角卡片 + 细线（参考 RE:VOLUTION 式编辑排版）。
  * 本文件只写"结构与状态"，颜色/尺寸一律来自 app/theme/tokens.py 的令牌。
- * 基础配色走 QPalette（见 app/theme/__init__.py），所以这里不写全局背景，
- * 避免历史上 "QMainWindow, QWidget { background:#0a0a0a }" 把所有嵌套面板
- * 压成同一层的毛病。
- *
- * 方向 B：保留黄黑高对比。琥珀只出现在「主操作 / 焦点 / 当前值」三处。
+ * 基础配色走 QPalette，QSS 只负责形状、间距与交互状态。
  * ==========================================================================*/
 
 /* ---------- 根 ---------- */
@@ -15,31 +12,79 @@ QMainWindow, QDialog { background: {{color.bg.root}}; }
 
 QToolTip {
     background: {{color.bg.tooltip}};
-    color: {{color.text.primary}};
-    border: 1px solid {{color.border}};
+    color: {{color.text.on.dark}};
+    border: none;
     border-radius: {{radius.sm}}px;
     padding: {{space.2}}px {{space.3}}px;
+    font-size: {{font.size.caption}}px;
 }
 
 /* ---------- 文字角色 ---------- */
 
 QLabel { background: transparent; color: {{color.text.primary}}; }
-QLabel[role="title"]   { font-size: {{font.size.title}}px; font-weight: {{font.weight.bold}}; color: {{color.accent}}; }
+QLabel[role="title"]   { font-size: {{font.size.title}}px; font-weight: {{font.weight.bold}}; color: {{color.text.primary}}; }
 QLabel[role="section"] { font-size: {{font.size.section}}px; font-weight: {{font.weight.semibold}}; color: {{color.text.primary}}; }
 QLabel[role="hint"]    { font-size: {{font.size.caption}}px; color: {{color.text.muted}}; }
-QLabel[role="value"]   { font-size: {{font.size.bodyLg}}px; color: {{color.text.secondary}}; }
-QLabel[role="status"]  { font-size: {{font.size.caption}}px; color: {{color.text.secondary}}; }
+QLabel[role="value"]   { font-size: {{font.size.bodyLg}}px; font-weight: {{font.weight.medium}}; color: {{color.text.secondary}}; }
+QLabel[role="status"]  { font-size: {{font.size.caption}}px; color: {{color.text.muted}}; }
 
-/* ---------- 画布：让照片有"装裱"边界，而不是直接压在纯黑里 ---------- */
+/* 标题下的品牌色短线 */
+#AccentBar {
+    background: {{color.accent}};
+    border: none;
+    border-radius: 2px;
+}
+
+/* 一条细线，用于分区 */
+QFrame[role="rule"] {
+    background: {{color.border.subtle}};
+    border: none;
+    min-height: 1px;
+    max-height: 1px;
+}
+
+/* ---------- 画布 ---------- */
 
 #PreviewSurface, #CanvasFrame {
     background: {{color.bg.canvas}};
     color: {{color.text.muted}};
     border: 1px solid {{color.border.subtle}};
-    border-radius: {{radius.md}}px;
+    border-radius: {{radius.lg}}px;
+}
+/* 拖拽悬停：红色虚线框 + 淡红底 */
+#PreviewSurface[drag="true"] {
+    background: {{color.accent.soft}};
+    border: 2px dashed {{color.accent}};
 }
 
-/* ---------- 卡片容器 ---------- */
+/* ---------- 卡片：QGroupBox 当作白底圆角卡片 ---------- */
+
+QGroupBox {
+    background: {{color.bg.panel}};
+    border: 1px solid {{color.border.subtle}};
+    border-radius: {{radius.lg}}px;
+    margin-top: 0px;
+    padding: 34px {{space.5}}px {{space.5}}px {{space.5}}px;
+    font-weight: {{font.weight.semibold}};
+}
+/* 拖动中的卡片：边框直接变红（改组件自身，不叠覆盖层） */
+QGroupBox[drag="true"] {
+    border: 1px solid {{color.accent}};
+}
+QGroupBox[drag="true"]::title {
+    color: {{color.accent.ink}};
+}
+
+QGroupBox::title {
+    subcontrol-origin: padding;
+    subcontrol-position: top left;
+    left: {{space.5}}px;
+    top: {{space.4}}px;
+    padding: 0px;
+    color: {{color.text.primary}};
+    font-size: {{font.size.section}}px;
+    font-weight: {{font.weight.semibold}};
+}
 
 QFrame[role="card"] {
     background: {{color.bg.panel}};
@@ -47,115 +92,102 @@ QFrame[role="card"] {
     border-radius: {{radius.lg}}px;
 }
 
-/* ---------- 分组：瑞士式分节线，替掉"描边盒子" ---------- */
-
-QGroupBox {
-    border: none;
-    border-top: 1px solid {{color.border.subtle}};
-    margin-top: {{space.5}}px;
-    padding-top: {{space.3}}px;
-    font-weight: {{font.weight.semibold}};
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: 0px;
-    padding: 0 0 {{space.3}}px 0;
-    color: {{color.text.primary}};
-    font-size: {{font.size.section}}px;
-}
-
 /* ---------- 按钮 ---------- */
 
 QPushButton {
-    background: {{color.bg.control}};
+    background: {{color.bg.panel}};
     color: {{color.text.primary}};
     border: 1px solid {{color.border}};
     border-radius: {{radius.md}}px;
-    padding: {{space.2}}px {{control.padding.x}}px;
+    padding: {{space.1}}px {{control.padding.x}}px;
     min-height: {{control.height}}px;
 }
 QPushButton:hover  { background: {{color.bg.control.hover}}; border-color: {{color.border.hover}}; }
 QPushButton:pressed { background: {{color.bg.control.active}}; }
 QPushButton:focus  { border: {{control.focus.width}}px solid {{color.focus.ring}}; }
 QPushButton:disabled {
-    background: {{color.bg.panel}};
-    color: {{color.text.disabled}};
-    border-color: {{color.border.subtle}};
-}
-
-/* 主操作：整屏只允许一个 */
-QPushButton[variant="primary"] {
-    background: {{color.accent}};
-    color: {{color.on.accent}};
-    border-color: {{color.accent}};
-    font-weight: {{font.weight.semibold}};
-}
-QPushButton[variant="primary"]:hover   { background: {{color.accent.hover}}; border-color: {{color.accent.hover}}; }
-QPushButton[variant="primary"]:pressed { background: {{color.accent.active}}; border-color: {{color.accent.active}}; }
-QPushButton[variant="primary"]:focus   { border: {{control.focus.width}}px solid {{color.text.primary}}; }
-QPushButton[variant="primary"]:disabled {
     background: {{color.bg.control}};
     color: {{color.text.disabled}};
     border-color: {{color.border.subtle}};
 }
 
-/* 次级操作：描边为主，hover 才出底色 */
+#BrandLogo {
+    background: transparent;
+    border: none;
+    padding: 0;
+    min-height: 0;
+    border-radius: {{radius.sm}}px;
+}
+#BrandLogo:hover { background: {{color.accent.soft}}; }
+#BrandLogo:focus { border: 1px solid {{color.focus.ring}}; }
+
+/* 主操作：黑底白字粗体胶囊（参考图 NEXT 按钮），整屏只允许一个 */
+QPushButton[variant="primary"] {
+    background: {{color.solid}};
+    color: {{color.on.solid}};
+    border: none;
+    border-radius: {{radius.pill}}px;
+    padding: {{space.1}}px {{space.6}}px;
+    min-height: {{control.height}}px;
+    font-weight: {{font.weight.bold}};
+}
+QPushButton[variant="primary"]:hover   { background: {{color.solid.hover}}; }
+QPushButton[variant="primary"]:pressed { background: {{color.solid.active}}; }
+QPushButton[variant="primary"]:focus   { border: {{control.focus.width}}px solid {{color.accent}}; }
+QPushButton[variant="primary"]:disabled {
+    background: {{color.bg.control}};
+    color: {{color.text.disabled}};
+    border: none;
+}
+
+/* 次级强调：红描边（面板内的重要动作） */
+QPushButton[variant="accent"] {
+    background: {{color.bg.panel}};
+    color: {{color.accent.ink}};
+    border: 1px solid {{color.accent}};
+    font-weight: {{font.weight.semibold}};
+}
+QPushButton[variant="accent"]:hover   { background: {{color.accent.soft}}; border-color: {{color.accent.hover}}; }
+QPushButton[variant="accent"]:pressed { background: {{color.accent.soft}}; border-color: {{color.accent.active}}; }
+QPushButton[variant="accent"]:disabled { color: {{color.text.disabled}}; border-color: {{color.border.subtle}}; }
+
+/* 幽灵按钮：只留描边 */
 QPushButton[variant="ghost"] {
     background: transparent;
     border: 1px solid {{color.border}};
 }
-QPushButton[variant="ghost"]:hover { background: {{color.bg.control}}; border-color: {{color.accent}}; color: {{color.accent}}; }
+QPushButton[variant="ghost"]:hover { background: {{color.bg.control.hover}}; border-color: {{color.accent}}; color: {{color.accent.ink}}; }
 
-/* 次级强调：面板内的主要动作（如"运行 AI 深度估算"），
-   用琥珀描边而不是实心，避免和全局主操作抢注意力 */
-QPushButton[variant="accent"] {
-    background: transparent;
-    color: {{color.accent}};
-    border: 1px solid {{color.accent}};
-    font-weight: {{font.weight.semibold}};
-}
-QPushButton[variant="accent"]:hover   { background: {{color.bg.control}}; border-color: {{color.accent.hover}}; color: {{color.accent.hover}}; }
-QPushButton[variant="accent"]:pressed { background: {{color.bg.control.active}}; }
-QPushButton[variant="accent"]:disabled { color: {{color.text.disabled}}; border-color: {{color.border.subtle}}; }
-
-/* 暖色实心按钮（导入图片）：黄底圆角矩形、无边框、深橙字。
-   文字必须用 text.on.warm 而不是 text.warm —— 亮橙在黄底上只有 1.37:1。 */
+/* 导入图片：黑底白字粗体胶囊（和主操作同形） */
 QPushButton[variant="warm"] {
-    background: {{color.accent}};
-    color: {{color.text.on.warm}};
+    background: {{color.solid}};
+    color: {{color.on.solid}};
     border: none;
-    border-radius: {{radius.md}}px;
-    /* 无边框按钮没有上下各 1px 的描边，纵向 padding 补 1px 才能和标准按钮等高 */
-    padding: 5px 18px;
+    border-radius: {{radius.pill}}px;
+    padding: {{space.1}}px {{space.6}}px;
     min-height: {{control.height}}px;
-    font-weight: {{font.weight.semibold}};
+    font-weight: {{font.weight.bold}};
 }
-QPushButton[variant="warm"]:hover   { background: {{color.accent.hover}}; }
-QPushButton[variant="warm"]:pressed { background: {{color.accent.active}}; }
-QPushButton[variant="warm"]:focus   { border: {{control.focus.width}}px solid {{color.text.primary}}; }
-QPushButton[variant="warm"]:disabled {
-    background: {{color.bg.control}};
-    color: {{color.text.disabled}};
-    border: none;
-}
+QPushButton[variant="warm"]:hover   { background: {{color.solid.hover}}; }
+QPushButton[variant="warm"]:pressed { background: {{color.solid.active}}; }
+QPushButton[variant="warm"]:focus   { border: {{control.focus.width}}px solid {{color.accent}}; }
 
 /* 可切换按钮（显示原图） */
 QPushButton:checked {
-    background: {{color.accent}};
-    color: {{color.on.accent}};
-    border-color: {{color.accent}};
+    background: {{color.text.primary}};
+    color: {{color.bg.root}};
+    border-color: {{color.text.primary}};
     font-weight: {{font.weight.semibold}};
 }
 
 /* ---------- 下拉框 ---------- */
 
 QComboBox {
-    background: {{color.bg.control}};
+    background: {{color.bg.panel}};
     color: {{color.text.primary}};
     border: 1px solid {{color.border}};
     border-radius: {{radius.md}}px;
-    padding: {{space.2}}px 28px {{space.2}}px {{control.padding.x}}px;
+    padding: {{space.2}}px 32px {{space.2}}px {{control.padding.x}}px;
     min-height: {{control.height}}px;
 }
 QComboBox:hover { border-color: {{color.border.hover}}; }
@@ -164,19 +196,19 @@ QComboBox:disabled { color: {{color.text.disabled}}; border-color: {{color.borde
 QComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: center right;
-    width: 24px;
+    width: 28px;
     border: none;
     background: transparent;
 }
 QComboBox::down-arrow { image: url({{asset.chevron}}); width: 10px; height: 10px; }
 QComboBox QAbstractItemView {
-    background: {{color.bg.control}};
+    background: {{color.bg.panel}};
     color: {{color.text.primary}};
     border: 1px solid {{color.border}};
     border-radius: {{radius.md}}px;
     padding: {{space.2}}px;
-    selection-background-color: {{color.accent}};
-    selection-color: {{color.on.accent}};
+    selection-background-color: {{color.accent.soft}};
+    selection-color: {{color.accent.ink}};
     outline: 0;
 }
 
@@ -185,7 +217,7 @@ QComboBox QAbstractItemView {
 QSlider { min-height: {{control.height}}px; background: transparent; }
 QSlider::groove:horizontal {
     height: {{control.slider.groove}}px;
-    background: {{color.bg.control.active}};
+    background: {{color.border.subtle}};
     border-radius: {{space.1}}px;
 }
 QSlider::sub-page:horizontal {
@@ -195,33 +227,29 @@ QSlider::sub-page:horizontal {
 QSlider::handle:horizontal {
     width: {{control.slider.handle}}px;
     height: {{control.slider.handle}}px;
-    margin: -6px 0;
-    border-radius: 7px;
-    background: {{color.text.primary}};
-    border: 2px solid {{color.bg.root}};
+    margin: -7px 0;
+    border-radius: 8px;
+    background: {{color.bg.panel}};
+    border: 2px solid {{color.accent}};
 }
-QSlider::handle:horizontal:hover { background: {{color.accent}}; }
-/* 注意：Qt 不接受 "QSlider:focus::handle" 这类「控件状态 + 子控件」写法，
-   写错会把声明套到整个滑块上（表现为整条滑块被描边/填灰）。
-   禁用态与焦点环在 P1 由自绘的 SliderRow 组件负责。 */
+QSlider::handle:horizontal:hover { border-color: {{color.accent.hover}}; background: {{color.accent.soft}}; }
 
 /* ---------- 勾选 ---------- */
 
 QCheckBox { spacing: {{space.3}}px; color: {{color.text.primary}}; }
 QCheckBox::indicator {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border: 1px solid {{color.border}};
     border-radius: {{radius.sm}}px;
-    background: {{color.bg.control}};
+    background: {{color.bg.panel}};
 }
-QCheckBox::indicator:hover { border-color: {{color.border.hover}}; }
+QCheckBox::indicator:hover { border-color: {{color.accent}}; }
 QCheckBox::indicator:checked {
     background: {{color.accent}};
     border-color: {{color.accent}};
     image: url({{asset.check}});
 }
-QCheckBox::indicator:focus { border: {{control.focus.width}}px solid {{color.focus.ring}}; }
 
 /* ---------- 分隔器 ---------- */
 
@@ -240,42 +268,25 @@ QStatusBar {
 }
 QStatusBar::item { border: none; }
 
-/* ---------- 可滚动控制栏：控件变多时不撑破窗口 ---------- */
-
-QScrollArea#ControlsScroll { background: transparent; border: none; }
-QScrollArea#ControlsScroll > QWidget > QWidget { background: transparent; }
-
 /* ---------- 滚动条 ---------- */
 
-QScrollBar:vertical {
-    background: transparent;
-    width: 10px;
-    margin: 0;
-}
+QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
 QScrollBar::handle:vertical {
     background: {{color.border}};
-    border-radius: 4px;
-    min-height: 28px;
+    border-radius: 5px;
+    min-height: 32px;
 }
-QScrollBar::handle:vertical:hover { background: {{color.border.hover}}; }
+QScrollBar::handle:vertical:hover { background: {{color.accent}}; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
-QScrollBar:horizontal {
-    background: transparent;
-    height: 10px;
-    margin: 0;
-}
-QScrollBar::handle:horizontal {
-    background: {{color.border}};
-    border-radius: 4px;
-    min-width: 28px;
-}
+QScrollBar:horizontal { background: transparent; height: 10px; margin: 0; }
+QScrollBar::handle:horizontal { background: {{color.border}}; border-radius: 5px; min-width: 32px; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 
-/* ---------- 输入框（导出对话框会用到） ---------- */
+/* ---------- 输入框 ---------- */
 
 QLineEdit {
-    background: {{color.bg.control}};
+    background: {{color.bg.panel}};
     color: {{color.text.primary}};
     border: 1px solid {{color.border}};
     border-radius: {{radius.md}}px;
@@ -285,3 +296,25 @@ QLineEdit {
     selection-color: {{color.on.accent}};
 }
 QLineEdit:focus { border: {{control.focus.width}}px solid {{color.focus.ring}}; }
+
+QSpinBox#LensValue, QDoubleSpinBox#LensValue {
+    background: {{color.bg.panel}};
+    color: {{color.text.primary}};
+    border: 1px solid {{color.border}};
+    border-radius: {{radius.md}}px;
+    padding: 2px 6px;
+    min-height: 22px;
+}
+QSpinBox#LensValue:focus, QDoubleSpinBox#LensValue:focus { border: 1px solid {{color.focus.ring}}; }
+QSpinBox#LensValue::up-button, QSpinBox#LensValue::down-button,
+QDoubleSpinBox#LensValue::up-button, QDoubleSpinBox#LensValue::down-button {
+    width: 0;
+    height: 0;
+    border: none;
+}
+QSpinBox#LensValue QLineEdit, QDoubleSpinBox#LensValue QLineEdit {
+    background: transparent;
+    border: none;
+    padding: 0;
+    min-height: 0;
+}

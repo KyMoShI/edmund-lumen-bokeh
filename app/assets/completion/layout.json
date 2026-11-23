@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "file": "排版.pdf",
+    "page": 2,
+    "sha256": "945627123d706f889935ad8ccfc88589b9c85ad7171ea7a5737bd5c2d3c6591e",
+    "renderer": "PDFium"
+  },
+  "artboard": [
+    4096,
+    2160
+  ],
+  "referenceScale": 0.3333333333333333,
+  "panelRect": [
+    1213.18,
+    740.123,
+    1874.398,
+    788.648
+  ],
+  "radius": 50,
+  "panelCenterRatio": [
+    0.525,
+    0.525
+  ],
+  "buttons": {
+    "exit": {
+      "rect": [
+        2227.5688,
+        1344.7687,
+        383.523,
+        110.551
+      ],
+      "radius": 50
+    },
+    "next": {
+      "rect": [
+        2631.7698,
+        1344.7687,
+        383.523,
+        110.551
+      ],
+      "radius": 50
+    }
+  },
+  "numberRect": [
+    1390.501,
+    1125.104,
+    276,
+    156
+  ],
+  "pathTitleRect": [
+    1699.8887,
+    1125.104,
+    1190,
+    60
+  ],
+  "pathRect": [
+    1699.8887,
+    1185.104,
+    1190,
+    117
+  ],
+  "layers": [
+    {
+      "name": "surface",
+      "file": "surface.png",
+      "rect": [
+        1212,
+        739,
+        1877,
+        791
+      ],
+      "paintRanges": [
+        [
+          50,
+          123
+        ],
+        [
+          561,
+          590
+        ]
+      ],
+      "sha256": "2d0654fb7821e2fd0f6af03e3540000aab6047aa5b034ea60340e8bcfea30f4a"
+    },
+    {
+      "name": "title",
+      "file": "title.png",
+      "rect": [
+        1393,
+        891,
+        748,
+        185
+      ],
+      "paintRanges": [
+        [
+          124,
+          361
+        ]
+      ],
+      "sha256": "1d092cb5f6dd5237f5b29628a5529107b01a085d814924a413c91dc52a09efcc"
+    },
+    {
+      "name": "next",
+      "file": "next.png",
+      "rect": [
+        2631,
+        1344,
+        385,
+        112
+      ],
+      "paintRanges": [
+        [
+          385,
+          482
+        ]
+      ],
+      "sha256": "15900dc3be4540ac1509223ed935b375cd6b303c968640f2d8c16f8434b7e550"
+    },
+    {
+      "name": "exit",
+      "file": "exit.png",
+      "rect": [
+        2227,
+        1344,
+        385,
+        112
+      ],
+      "paintRanges": [
+        [
+          483,
+          560
+        ]
+      ],
+      "sha256": "465c78b0dee6833f9f3eb6d91631adc4cabc6abf3d8ddb336f8ccdc4d6d35730"
+    },
+    {
+      "name": "pattern",
+      "file": "pattern.png",
+      "rect": [
+        1214,
+        740,
+        650,
+        171
+      ],
+      "paintRanges": [
+        [
+          83,
+          99
+        ]
+      ],
+      "sha256": "391176dffa3b2cfdd83be1b68f702d380d02109098aac25695d55288ef4f03ad"
+    },
+    {
+      "name": "illustration",
+      "file": "illustration.png",
+      "rect": [
+        1214,
+        945,
+        1874,
+        584
+      ],
+      "paintRanges": [
+        [
+          100,
+          123
+        ]
+      ],
+      "sha256": "2658a6830849f2faba279e561d388f15be3710db97ec02090a8ddddbe2c60c47"
+    }
+  ],
+  "excludedStaticData": [
+    "sample workspace image",
+    "sample path",
+    "sample number"
+  ],
+  "runtimeStyle": {
+    "actionText": "white-fill-without-blue-outline",
+    "illustration": "grayscale-preserving-alpha"
+  },
+  "runtime": {
+    "background": "current-workspace-blurred-snapshot",
+    "longPath": "word-wrap-or-scroll",
+    "numberRange": [
+      0,
+      9
+    ],
+    "exit": "return-to-welcome",
+    "next": "return-to-current-workspace"
+  }
+}

@@ -57,15 +57,15 @@ def main() -> int:
     draw(
         "chevron-down",
         size=10,
-        color="#9A9A9A",
+        color="#6E6864",
         width=1.4,
         points=[(2.2, 3.8), (5.0, 6.6), (7.8, 3.8)],
     )
     draw(
         "check",
         size=12,
-        color="#0A0A0A",
-        width=1.8,
+        color="#FFFFFF",
+        width=1.9,
         points=[(2.4, 6.2), (4.8, 8.6), (9.6, 3.4)],
     )
     return 0

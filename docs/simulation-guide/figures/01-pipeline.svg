@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1440" height="1060" viewBox="0 0 1440 1060">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#60779E" stroke-width="1.5"/></marker></defs>
+<rect width="1440" height="1060" fill="#F6F8FC"/>
+<g font-family="Sarasa Gothic SC">
+<text x="32" y="54" font-size="33" fill="#19273E" font-weight="700" text-anchor="start">01  从单张图片到散景效果</text>
+<text x="32" y="93" font-size="18" fill="#53647B" font-weight="400" text-anchor="start">当前源码流程 · 原图、相对深度与参数共同决定模拟结果</text>
+<rect x="32" y="135" width="416" height="125" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="50" y="155" width="5" height="25" rx="2" fill="#2346E8"/>
+<text x="68" y="176" font-size="23" fill="#2346E8" font-weight="700" text-anchor="start">图像输入</text>
+<text x="56" y="213" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">解码图像、校正 EXIF 方向</text>
+<text x="56" y="242" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">生成预览或导出所需的目标尺寸</text>
+<polyline points="240,260 240,310" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="240,310 234.0,298.0 246.0,298.0" fill="#60779E"/>
+<rect x="512" y="135" width="416" height="125" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="530" y="155" width="5" height="25" rx="2" fill="#2346E8"/>
+<text x="548" y="176" font-size="23" fill="#2346E8" font-weight="700" text-anchor="start">深度输入</text>
+<text x="536" y="213" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">AI / 导入深度图</text>
+<text x="536" y="242" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">无深度或选择中心：使用径向近似</text>
+<polyline points="720,260 720,310" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="720,310 714.0,298.0 726.0,298.0" fill="#60779E"/>
+<rect x="992" y="135" width="416" height="125" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="1010" y="155" width="5" height="25" rx="2" fill="#2346E8"/>
+<text x="1028" y="176" font-size="23" fill="#2346E8" font-weight="700" text-anchor="start">参数输入</text>
+<text x="1016" y="213" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">光圈、焦点、虚化与光斑参数</text>
+<text x="1016" y="242" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">主体保护、边缘及输出设置</text>
+<polyline points="1200,260 1200,310" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="1200,310 1194.0,298.0 1206.0,298.0" fill="#60779E"/>
+<rect x="32" y="310" width="1376" height="135" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="50" y="330" width="5" height="25" rx="2" fill="#2346E8"/>
+<text x="68" y="351" font-size="23" fill="#2346E8" font-weight="700" text-anchor="start">共同准备：失焦分布与主体边界</text>
+<text x="56" y="388" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">深度对齐与归一化 → 计算 CoC（失焦量）→ 焦内软掩膜 → 边缘扩张 / 收缩与羽化</text>
+<text x="56" y="417" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">保留目标尺寸原图和焦内掩膜；各模式分别构建背景工作图与外推底图。</text>
+<polyline points="720,445 720,480 360,480 360,510" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="360,510 354.0,498.0 366.0,498.0" fill="#60779E"/>
+<polyline points="720,480 1080,480 1080,510" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="1080,510 1074.0,498.0 1086.0,498.0" fill="#60779E"/>
+<rect x="32" y="510" width="656" height="260" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="50" y="530" width="5" height="25" rx="2" fill="#2346E8"/>
+<text x="68" y="551" font-size="23" fill="#2346E8" font-weight="700" text-anchor="start">普通光斑模式</text>
+<text x="56" y="588" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">在编码图像上建立最长边不超过 1000 的背景工作图</text>
+<text x="56" y="617" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">按背景有效像素外推被遮挡区域，构建背景底图</text>
+<text x="56" y="646" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">按光圈形状生成三档 PSF，使用 FFT 卷积</text>
+<text x="56" y="675" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">按失焦量混合各档背景结果</text>
+<text x="56" y="704" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">恢复目标尺寸，再叠加独立的局部高光层</text>
+<text x="56" y="733" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">独立高光层可使用 1× / 2× / 3× 超采样</text>
+<rect x="752" y="510" width="656" height="260" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="770" y="530" width="5" height="25" rx="2" fill="#247B64"/>
+<text x="788" y="551" font-size="23" fill="#247B64" font-weight="700" text-anchor="start">高性能光斑模式</text>
+<text x="776" y="588" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">先解码为线性光，再缩小到背景工作分辨率</text>
+<text x="776" y="617" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">背景外推 → 反光源估算 → 离焦与视场采样</text>
+<text x="776" y="646" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">以宽谱波前 PSF 扩散所有有效源分布</text>
+<text x="776" y="675" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">归一化颜色及覆盖权重，分别生成焦前 / 焦后层</text>
+<text x="776" y="704" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">该分支没有独立高光覆盖层</text>
+<polyline points="360,770 360,840" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="360,840 354.0,828.0 366.0,828.0" fill="#60779E"/>
+<polyline points="1080,770 1080,840" fill="none" stroke="#60779E" stroke-width="2"/>
+<polygon points="1080,840 1074.0,828.0 1086.0,828.0" fill="#60779E"/>
+<rect x="32" y="840" width="1376" height="130" rx="16" fill="#FFFFFF" stroke="#D5DEED" stroke-width="1.5"/>
+<rect x="50" y="860" width="5" height="25" rx="2" fill="#2346E8"/>
+<text x="68" y="881" font-size="23" fill="#2346E8" font-weight="700" text-anchor="start">合成与输出</text>
+<text x="56" y="918" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">恢复目标输出尺寸，保留原分辨率的焦内图像；高性能分支编码各层后按覆盖率合成。</text>
+<text x="56" y="947" font-size="18" fill="#19273E" font-weight="400" text-anchor="start">输出合成图，或输出颜色层与 alpha 一致的透明效果 PNG；预览与导出复用同一引擎。</text>
+<text x="32" y="999" font-size="17" fill="#53647B" font-weight="400" text-anchor="start">内部背景计算最长边不超过 1000 像素；该限制不等于导出文件的像素尺寸。</text>
+<text x="32" y="1026" font-size="17" fill="#53647B" font-weight="400" text-anchor="start">当前虚化算子使用 CPU；中心径向深度、单目相对深度及通用波前均属于近似。</text>
+</g></svg>

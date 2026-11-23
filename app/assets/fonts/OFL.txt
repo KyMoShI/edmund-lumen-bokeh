@@ -1,6 +1,11 @@
 Baoyue UI（app/assets/fonts/BaoyueUI-*.ttf）的字体来源与许可
 ==============================================================
 
+另附 Sarasa Gothic SC 常规、半粗体与粗体，未经修改。字体版权信息：
+Copyright 2015–2020 Renzhi Li (Belleve Invis); portions copyright
+2014–2019 Adobe Systems Incorporated, 2017–2020 Rasmus Andersson,
+and 2017–2018 MoneMizuno. 许可：SIL Open Font License 1.1（下附全文）。
+
 上游字体：Noto Sans SC（变量字体，wght 100–900）
 上游版权：Copyright 2014-2021 Adobe (http://www.adobe.com/),
           with Reserved Font Name 'Source'

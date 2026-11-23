@@ -15,7 +15,8 @@
 from __future__ import annotations
 
 import argparse
-import shutil
+from importlib.util import find_spec
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -31,27 +32,30 @@ HEAVY_EXCLUDES = ["torch", "torchvision", "torchaudio", "transformers", "acceler
 COMMON_EXCLUDES = ["tkinter", "matplotlib", "scipy", "pytest", "IPython", "notebook"]
 
 
-def clean_caches() -> None:
-    """打包前清掉 __pycache__，否则会被当成资源一起塞进 _internal/app。"""
-    for cache in ROOT.rglob("__pycache__"):
-        if "node_modules" in cache.parts or ".venv" in cache.parts:
-            continue
-        shutil.rmtree(cache, ignore_errors=True)
-
-
-def build(onefile: bool, with_ai: bool, clean: bool) -> Path:
-    clean_caches()
+def build(onefile: bool, with_ai: bool, clean: bool, output: Path | None = None) -> Path:
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm",
         "--windowed",
         "--name", APP_NAME,
         "--icon", str(ICON),
-        "--add-data", f"{ROOT / 'app' / 'theme'};app/theme",
+        "--add-data", f"{ROOT / 'app' / 'theme' / 'app.qss.tmpl'};app/theme",
+        "--add-data", f"{ROOT / 'app' / 'theme' / 'icons'};app/theme/icons",
         "--add-data", f"{ROOT / 'app' / 'assets'};app/assets",
+        "--add-data", f"{ROOT / 'README.md'};.",
+        "--add-data", f"{ROOT / 'CHANGELOG.md'};.",
+        "--add-data", f"{ROOT / 'LICENSE'};.",
+        "--add-data", f"{ROOT / 'docs' / 'images'};docs/images",
+        "--add-data", f"{ROOT / 'design-system' / 'baoyue-bokeh' / 'pages'};design-system/baoyue-bokeh/pages",
         "--paths", str(ROOT / "app"),
     ]
     cmd.append("--clean" if clean else "--log-level=WARN")
+    output = (output or ROOT / "dist").resolve()
+    if output != ROOT / "dist":
+        scratch = ROOT / "tmp" / ("pack-" + output.name)
+        scratch.mkdir(parents=True, exist_ok=True)
+        cmd += ["--distpath", str(output), "--workpath", str(scratch / "work"),
+                "--specpath", str(scratch)]
     if onefile:
         cmd.append("--onefile")
     for module in COMMON_EXCLUDES:
@@ -67,14 +71,23 @@ def build(onefile: bool, with_ai: bool, clean: bool) -> Path:
         cmd += ["--collect-submodules", "transformers"]
         for module in ("torch", "tokenizers", "safetensors", "huggingface_hub"):
             cmd += ["--hidden-import", module]
+        if find_spec("depth_anything_3"):
+            cmd += ["--collect-data", "depth_anything_3", "--collect-submodules", "depth_anything_3"]
     cmd.append(str(ENTRY))
 
     print("执行：", " ".join(f'"{c}"' if " " in c else c for c in cmd))
-    subprocess.run(cmd, cwd=ROOT, check=True)
+    env = os.environ.copy()
+    # Poppler may ship a private ICU build with the same DLL name as Windows ICU.
+    # Qt links against Windows ICU and must not pick up Poppler's copy.
+    env["PATH"] = os.pathsep.join(
+        entry for entry in env.get("PATH", "").split(os.pathsep)
+        if "poppler" not in entry.casefold()
+    )
+    subprocess.run(cmd, cwd=ROOT, check=True, env=env)
 
-    dist = ROOT / "dist" / APP_NAME
+    dist = output / APP_NAME
     if onefile:
-        dist = ROOT / "dist" / f"{APP_NAME}.exe"
+        dist = output / f"{APP_NAME}.exe"
     return dist
 
 
@@ -83,13 +96,14 @@ def main() -> int:
     parser.add_argument("--onefile", action="store_true", help="打成单个 exe（启动更慢）")
     parser.add_argument("--with-ai", action="store_true", help="包含 torch/transformers（体积 +1GB 以上）")
     parser.add_argument("--clean", action="store_true", help="清空 build/ 后重新打包")
+    parser.add_argument("--output", type=Path, help="指定构建输出目录")
     args = parser.parse_args()
 
     if not ICON.is_file():
         print("缺少图标，先运行 tools/build_icon.py")
         return 1
 
-    target = build(args.onefile, args.with_ai, args.clean)
+    target = build(args.onefile, args.with_ai, args.clean, args.output)
     if not target.exists():
         print("打包失败：找不到产物", target)
         return 1

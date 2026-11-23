@@ -21,7 +21,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "app" / "assets" / "brand" / "logo-mark.png"
+SRC = ROOT / "app" / "assets" / "brand" / "logo-mark-red.png"
 OUT = ROOT / "app" / "assets" / "brand" / "app.ico"
 
 SIZES = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
