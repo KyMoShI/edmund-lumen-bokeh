@@ -4,11 +4,9 @@ Windows 桌面景深模拟工具。导入照片后，可按中心距离、点击
 
 **源码版本 1.2.5 · 现代主义**。本文说明当前源码。已有可执行文件的功能取决于其构建日期，版本差异见[更新日志](CHANGELOG.md)。
 
-## 现代主义宣传片
 
-[![现代主义横屏宣传片封面，点击打开视频](docs/images/promo-landscape.jpg)](https://github.com/KyMoShI/edmund-lumen-bokeh/releases/download/v1.2.5/edmund-lumen-bokeh-v1.2.5-promo-landscape.mp4)
 
-横屏宣传片 · 1920 × 1080 · 32 秒。[打开或下载原片](https://github.com/KyMoShI/edmund-lumen-bokeh/releases/download/v1.2.5/edmund-lumen-bokeh-v1.2.5-promo-landscape.mp4)
+(https://github.com/KyMoShI/edmund-lumen-bokeh/releases/download/v1.2.5/edmund-lumen-bokeh-v1.2.5-promo-landscape.mp4)
 
 ![浅色工作区](design-system/baoyue-bokeh/pages/workspace-photo.png)
 
