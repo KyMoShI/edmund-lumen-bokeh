@@ -376,8 +376,8 @@ class _TransformersBackend:
 
         self._torch = torch
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.processor = AutoImageProcessor.from_pretrained(model_path)
-        self.model = AutoModelForDepthEstimation.from_pretrained(model_path).to(device).eval()
+        self.processor = AutoImageProcessor.from_pretrained(model_path, local_files_only=True)
+        self.model = AutoModelForDepthEstimation.from_pretrained(model_path, local_files_only=True).to(device).eval()
 
     def infer(self, pil, size, notify, cancelled):
         import torch

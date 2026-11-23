@@ -17,8 +17,11 @@ from __future__ import annotations
 import argparse
 from importlib.util import find_spec
 import os
+import re
+import json
 import subprocess
 import sys
+import ssl
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -45,10 +48,22 @@ def build(onefile: bool, with_ai: bool, clean: bool, output: Path | None = None)
         "--add-data", f"{ROOT / 'README.md'};.",
         "--add-data", f"{ROOT / 'CHANGELOG.md'};.",
         "--add-data", f"{ROOT / 'LICENSE'};.",
-        "--add-data", f"{ROOT / 'docs' / 'images'};docs/images",
-        "--add-data", f"{ROOT / 'design-system' / 'baoyue-bokeh' / 'pages'};design-system/baoyue-bokeh/pages",
+        "--runtime-hook", str(ROOT / "tools" / "pyi_runtime_paths.py"),
         "--paths", str(ROOT / "app"),
     ]
+    certificate = Path(ssl.__file__).with_name("codex-rejected-cas.pem")
+    if certificate.is_file():
+        cmd += ["--add-data", f"{certificate};."]
+    images = set()
+    for name in ("README.md", "CHANGELOG.md"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        for relative in re.findall(r"\]\(([^)]+)\)", text):
+            path = (ROOT / relative).resolve()
+            if (path.is_relative_to(ROOT) and path.is_file()
+                    and path.suffix.lower() in (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif")):
+                images.add(path)
+    for path in sorted(images):
+        cmd += ["--add-data", f"{path};{path.parent.relative_to(ROOT).as_posix()}"]
     cmd.append("--clean" if clean else "--log-level=WARN")
     output = (output or ROOT / "dist").resolve()
     if output != ROOT / "dist":
@@ -71,8 +86,13 @@ def build(onefile: bool, with_ai: bool, clean: bool, output: Path | None = None)
         cmd += ["--collect-submodules", "transformers"]
         for module in ("torch", "tokenizers", "safetensors", "huggingface_hub"):
             cmd += ["--hidden-import", module]
+        vision = find_spec("torchvision")
+        if vision and vision.submodule_search_locations:
+            for binary in sorted(Path(next(iter(vision.submodule_search_locations))).glob("*.pyd")):
+                cmd += ["--add-binary", f"{binary};torchvision"]
         if find_spec("depth_anything_3"):
-            cmd += ["--collect-data", "depth_anything_3", "--collect-submodules", "depth_anything_3"]
+            cmd += ["--collect-data", "depth_anything_3", "--collect-submodules", "depth_anything_3",
+                    "--copy-metadata", "imageio"]
     cmd.append(str(ENTRY))
 
     print("执行：", " ".join(f'"{c}"' if " " in c else c for c in cmd))
@@ -88,6 +108,11 @@ def build(onefile: bool, with_ai: bool, clean: bool, output: Path | None = None)
     dist = output / APP_NAME
     if onefile:
         dist = output / f"{APP_NAME}.exe"
+    else:
+        from slim_payload import slim_payload
+        report = slim_payload(dist)
+        (output / "payload-slimming.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"移除重复动态库：{report['saved_bytes'] / 1024 ** 2:.1f} MiB")
     return dist
 
 

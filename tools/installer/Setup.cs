@@ -145,10 +145,13 @@ internal sealed class SetupWindow : Form
         ClientSize = new Size(710, 424);
         BackColor = Color.White;
         DoubleBuffered = true;
-        using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("sarasa.ttf"))
+        using (var file = File.OpenRead(Assembly.GetExecutingAssembly().Location))
+        using (var archive = new ZipArchive(file, ZipArchiveMode.Read))
+        using (var stream = archive.GetEntry("_internal/app/assets/fonts/SarasaGothicSC-Bold.ttf").Open())
+        using (var memory = new MemoryStream())
         {
-            var bytes = new byte[(int)stream.Length];
-            using (var reader = new BinaryReader(stream)) bytes = reader.ReadBytes(bytes.Length);
+            stream.CopyTo(memory);
+            var bytes = memory.ToArray();
             fontData = Marshal.AllocCoTaskMem(bytes.Length);
             Marshal.Copy(bytes, 0, fontData, bytes.Length);
             fonts.AddMemoryFont(fontData, bytes.Length);

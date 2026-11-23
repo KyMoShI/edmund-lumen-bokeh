@@ -207,7 +207,7 @@ class DesignDialog(QDialog):
     """
     content_insets=(36,88,36,32)
 
-    def __init__(self,parent=None,title='',flags=None,*,workspace_panel=False):
+    def __init__(self,parent=None,title='',flags=None,*,workspace_panel=False,content_titled=False):
         if flags is None and isinstance(title,Qt.WindowType):flags,title=title,''
         kind=Qt.WindowType.Dialog if flags is None else flags
         self._floating_chrome = kind == Qt.WindowType.Window
@@ -227,6 +227,9 @@ class DesignDialog(QDialog):
             self.header.caption.setStyleSheet('background:#303030;color:white;border-radius:14px;padding:4px 12px;font-size:16px;font-weight:700;')
             self.header.setStyleSheet('QWidget#MainWindowTitleBar {background:transparent;}')
             self.header.caption.setFixedHeight(30)
+            if workspace_panel or content_titled:
+                self.header.caption.hide()
+                self.header.layout().insertStretch(0,1)
         shell.addWidget(self.header)
         self.body_scroll=QScrollArea(self.surface);self.body_scroll.setWidgetResizable(True)
         self.body_scroll.setFrameShape(QScrollArea.Shape.NoFrame)

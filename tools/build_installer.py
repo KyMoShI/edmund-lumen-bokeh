@@ -27,11 +27,10 @@ def build(payload: Path, output: Path, model: Path | None, license_file: Path | 
         "/reference:System.Drawing.dll", "/reference:System.IO.Compression.dll",
         f"/win32manifest:{SETUP / 'app.manifest'}",
         f"/win32icon:{ASSETS / 'brand/app.ico'}",
-        f"/resource:{ASSETS / 'fonts/SarasaGothicSC-Bold.ttf'},sarasa.ttf",
         f"/resource:{ASSETS / 'completion/illustration.png'},illustration.png",
         f"/out:{partial}", SETUP / "Setup.cs",
     ], check=True)
-    with ZipFile(partial, "a", ZIP_DEFLATED, compresslevel=3) as zip_file:
+    with ZipFile(partial, "a", ZIP_DEFLATED, compresslevel=9) as zip_file:
         zip_file.write(payload / f"{PRODUCT}.exe", f"{PRODUCT}.exe")
         for source in sorted((payload / "_internal").rglob("*")):
             if source.is_file():

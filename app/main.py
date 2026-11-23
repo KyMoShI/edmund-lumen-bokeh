@@ -1291,7 +1291,7 @@ class FloatingPanelWindow(DesignDialog):
     """A non-modal, resizable window that returns its panel when closed."""
 
     def __init__(self, title, on_close, parent):
-        super().__init__(parent, flags=Qt.WindowType.Window)
+        super().__init__(parent, flags=Qt.WindowType.Window, content_titled=True)
         self.setWindowTitle(title)
         self._on_close = on_close
         self.finished.connect(lambda _result:self._on_close())
@@ -3815,7 +3815,9 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     # 打包后的自检入口：不弹窗、跑一遍完整初始化就退出，用来验证 exe 不缺资源
-    selftest = "--selftest" in sys.argv
+    runtime_check = "--selftest-runtime" in sys.argv
+    download_check = "--selftest-download" in sys.argv
+    selftest = "--selftest" in sys.argv or runtime_check or download_check
     if selftest:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -3827,6 +3829,16 @@ if __name__ == "__main__":
     window.show()
     if selftest:
         app.processEvents()
+        if download_check:
+            from packaging_check import check_download
+            status = check_download(sys.argv[sys.argv.index("--selftest-download") + 1])
+            window.close()
+            sys.exit(status)
+        if runtime_check:
+            from packaging_check import check_runtime
+            status = check_runtime(sys.argv[sys.argv.index("--selftest-runtime") + 1])
+            window.close()
+            sys.exit(status)
         window.close()  # stop the render/depth threads before exiting
         # --windowed 打包后 stdout 是 None，直接 print 会抛异常
         stream = sys.stdout or sys.stderr

@@ -146,6 +146,7 @@ def run():
             app.processEvents()
             dialog = floating.floating
             header = dialog.header
+            assert header.caption.isHidden()
             assert len(dialog.window_frame.edges) == 8
             assert all(edge.isVisible() for edge in dialog.window_frame.edges)
             assert header.close_button.text() == ""
@@ -179,6 +180,16 @@ def run():
             app.processEvents()
             assert floating.floating is None
             assert window.light_workspace.focus.isVisible()
+            for card in window.light_workspace.floating:
+                card.detach()
+                app.processEvents()
+                assert card.floating.header.caption.isHidden(), card.title
+                assert card.floating.header.close_button.isVisible(), card.title
+                assert card.floating.header.maximize.isVisible(), card.title
+                assert card.floating.header.minimize.isVisible(), card.title
+                card.floating.header.close_button.click()
+                app.processEvents()
+                assert card.floating is None, card.title
             print("PASS: floating card drag/resize, dot minimize/maximize and red-dot return to workspace")
             window.toggle_theme()
             QTest.qWait(500)
