@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from workspace_controls import control_font
+from window_frame import FramelessWindowFrame, WindowTitleBar
 
 
 BLUE = '#001EFF'
@@ -172,7 +173,8 @@ class _Surface(QWidget):
 
     def paintEvent(self,event):
         painter=QPainter(self);painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        path=QPainterPath();path.addRoundedRect(QRectF(self.rect()).adjusted(.5,.5,-.5,-.5),16,16)
+        radius=0 if self.parentWidget().isMaximized() else 18
+        path=QPainterPath();path.addRoundedRect(QRectF(self.rect()).adjusted(.5,.5,-.5,-.5),radius,radius)
         painter.fillPath(path,QColor('white'));painter.save();painter.setClipPath(path)
         painter.setPen(Qt.PenStyle.NoPen)
         for row in range(8):
@@ -191,8 +193,9 @@ class _Surface(QWidget):
         painter.setPen(QPen(QColor(BLUE),.75));painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
         painter.setPen(Qt.PenStyle.NoPen)
-        for offset,color in ((70,'#000000'),(56,BLUE),(42,'#FF3D36')):
-            painter.setBrush(QColor(color));painter.drawEllipse(QPointF(self.width()-offset,14),4.2,4.2)
+        if not getattr(self.parentWidget(),'_floating_chrome',False):
+            for offset,color in ((70,'#000000'),(56,BLUE),(42,'#FF3D36')):
+                painter.setBrush(QColor(color));painter.drawEllipse(QPointF(self.width()-offset,14),4.2,4.2)
 
 
 class DesignDialog(QDialog):
@@ -207,6 +210,7 @@ class DesignDialog(QDialog):
     def __init__(self,parent=None,title='',flags=None,*,workspace_panel=False):
         if flags is None and isinstance(title,Qt.WindowType):flags,title=title,''
         kind=Qt.WindowType.Dialog if flags is None else flags
+        self._floating_chrome = kind == Qt.WindowType.Window
         super().__init__(parent,kind|Qt.WindowType.FramelessWindowHint)
         self.setObjectName('DesignDialog');self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setPalette(paper_palette());self.setFont(control_font(13))
@@ -216,7 +220,14 @@ class DesignDialog(QDialog):
         self.surface=_Surface(self);outer.addWidget(self.surface)
         shell=QVBoxLayout(self.surface);shell.setContentsMargins(24,20,24,20);shell.setSpacing(12)
         self._shell=shell;self.footer=None
-        self.header=_TitleBar(self);shell.addWidget(self.header)
+        self.header=WindowTitleBar(self) if self._floating_chrome else _TitleBar(self)
+        if self._floating_chrome:
+            self.header.setFixedHeight(44)
+            self.header.caption.setFont(control_font(16,bold=True))
+            self.header.caption.setStyleSheet('background:#303030;color:white;border-radius:14px;padding:4px 12px;font-size:16px;font-weight:700;')
+            self.header.setStyleSheet('QWidget#MainWindowTitleBar {background:transparent;}')
+            self.header.caption.setFixedHeight(30)
+        shell.addWidget(self.header)
         self.body_scroll=QScrollArea(self.surface);self.body_scroll.setWidgetResizable(True)
         self.body_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         self.body_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -228,6 +239,22 @@ class DesignDialog(QDialog):
         self._first_show=True
         self.setMinimumSize(360,220);self.resize(540,440)
         self.setWindowTitle(title)
+        if self._floating_chrome:
+            self.window_frame=FramelessWindowFrame(self,self.header,rounded_mask=False,edge_inset=12)
+
+    def nativeEvent(self,event_type,message):
+        frame=getattr(self,'window_frame',None)
+        if frame is not None and frame.native is not None:
+            result=frame.native.handle(message,frame)
+            if result is not None:return True,result
+        return super().nativeEvent(event_type,message)
+
+    def changeEvent(self,event):
+        super().changeEvent(event)
+        if getattr(self,'_floating_chrome',False) and hasattr(self,'surface'):
+            margin=0 if self.isMaximized() else 12
+            self.layout().setContentsMargins(margin,margin,margin,margin)
+            self.surface.update()
 
     def set_footer(self,widget):
         """Keep dialog actions visible while the body scrolls independently."""

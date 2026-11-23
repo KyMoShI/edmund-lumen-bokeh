@@ -1418,6 +1418,14 @@ class PageStack(QStackedWidget):
 
 
 class MainWindow(QMainWindow):
+    def nativeEvent(self, event_type, message):
+        frame = getattr(self, "window_frame", None)
+        if frame is not None and frame.native is not None:
+            result = frame.native.handle(message, frame)
+            if result is not None:
+                return True, result
+        return super().nativeEvent(event_type, message)
+
     def __init__(self):
         super().__init__()
         MOTION.update(MOTION_DEFAULTS)

@@ -29,6 +29,34 @@ def run():
         app.processEvents()
         frame = window.window_frame
         try:
+            assert [button.color.name() for button in (frame.title_bar.minimize, frame.title_bar.maximize,
+                                                       frame.title_bar.close_button)] == ["#000000", "#001eff", "#ff3d36"]
+            assert all(not button.text() for button in (frame.title_bar.minimize, frame.title_bar.maximize,
+                                                         frame.title_bar.close_button))
+            assert frame.corner_radius == 18
+            assert not window.mask().contains(QPoint(0, 0))
+            assert window.mask().contains(QPoint(18, 18))
+            assert window.mask().contains(QPoint(window.width()//2, window.height()//2))
+            if frame.native:
+                native = frame.native
+                required = 0x00C00000 | 0x00040000 | 0x00080000 | 0x00020000 | 0x00010000
+                assert native.get_style(int(window.winId()), -16) & required == required
+                rect = native.types.RECT()
+                native.user32.GetWindowRect(int(window.winId()), native.ctypes.byref(rect))
+                scale = window.devicePixelRatioF()
+                def hit(point):
+                    msg = native.types.MSG()
+                    msg.hWnd = int(window.winId())
+                    msg.message = 0x0084
+                    x, y = rect.left + round(point.x()*scale), rect.top + round(point.y()*scale)
+                    msg.lParam = (x & 0xffff) | ((y & 0xffff) << 16)
+                    return native.handle(native.ctypes.addressof(msg), frame)
+                assert hit(QPoint(100, 16)) == 2  # native caption for Aero Snap
+                assert hit(frame.title_bar.maximize.geometry().center()) == 9  # Snap Layouts button
+                assert hit(frame.title_bar.close_button.geometry().center()) == 1
+                assert hit(QPoint(2, 2)) == 13
+                print("PASS: real HWND snap styles, native caption/resize/max-button hit testing")
+            print("PASS: three design dots, 18px corner mask and accessible controls")
             assert window.windowFlags() & Qt.WindowType.FramelessWindowHint
             assert window.menuWidget() is frame.title_bar
             assert frame.title_bar.isVisible()
@@ -46,11 +74,13 @@ def run():
             frame.title_bar.maximize.click()
             app.processEvents()
             assert window.isMaximized()
+            assert window.mask().isEmpty()
             assert all(not edge.isVisible() for edge in frame.edges)
             assert frame.title_bar.maximize.toolTip() == "还原窗口"
             frame.title_bar.maximize.click()
             app.processEvents()
             assert not window.isMaximized()
+            assert not window.mask().isEmpty()
             assert all(edge.isVisible() for edge in frame.edges)
             QTest.mouseDClick(frame.title_bar, Qt.MouseButton.LeftButton)
             app.processEvents()
@@ -82,6 +112,45 @@ def run():
             assert window.is_workspace_active()
             assert frame.title_bar.isVisible()
             window.grab().save(str(output / "workspace-frameless.png"))
+            floating = next(item for item in window.light_workspace.floating if item.title == "焦点景深")
+            floating.detach()
+            app.processEvents()
+            dialog = floating.floating
+            header = dialog.header
+            assert len(dialog.window_frame.edges) == 8
+            assert all(edge.isVisible() for edge in dialog.window_frame.edges)
+            assert header.close_button.text() == ""
+            header.minimize.click()
+            app.processEvents()
+            assert dialog.isMinimized() and floating.floating is dialog
+            dialog.showNormal()
+            header.maximize.click()
+            app.processEvents()
+            assert dialog.isMaximized() and floating.floating is dialog
+            header.maximize.click()
+            app.processEvents()
+            assert not dialog.isMaximized() and floating.floating is dialog
+            original_pos = dialog.pos()
+            header._drag = QPoint(10,10)
+            header.mouseMoveEvent(QMouseEvent(QEvent.Type.MouseMove,QPointF(0,0),
+                QPointF(original_pos+QPoint(50,50)),Qt.MouseButton.NoButton,
+                Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier))
+            assert dialog.pos() == original_pos+QPoint(40,40)
+            header._drag = None
+            edge=dialog.window_frame.edges[7]
+            old_size=dialog.size()
+            edge._origin=(QPoint(200,200),dialog.geometry())
+            edge.mouseMoveEvent(QMouseEvent(QEvent.Type.MouseMove,QPointF(0,0),QPointF(260,240),
+                Qt.MouseButton.NoButton,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier))
+            edge._origin=None
+            app.processEvents()
+            assert dialog.width()>old_size.width() and dialog.height()>old_size.height()
+            dialog.grab().save(str(output / "floating-focus-dots.png"))
+            header.close_button.click()
+            app.processEvents()
+            assert floating.floating is None
+            assert window.light_workspace.focus.isVisible()
+            print("PASS: floating card drag/resize, dot minimize/maximize and red-dot return to workspace")
             window.toggle_theme()
             QTest.qWait(500)
             app.processEvents()
