@@ -16,6 +16,12 @@ on:
 permissions:
   contents: write
 
+# Windows hosted runners may use cp1252 for redirected stdout. Chinese app
+# names in selftest/build output require an explicit UTF-8 Python environment.
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
 jobs:
   build:
     runs-on: windows-latest
