@@ -7,6 +7,8 @@ Windows 桌面景深模拟工具。导入照片后，可按中心距离、点击
 
 ![浅色工作区](design-system/baoyue-bokeh/pages/workspace-photo.png)
 
+![宣传片](docs/images/伯爵大光圈-现代主义-横屏宣传片_1.gif)
+
 ## 快速启动
 
 1. 源码版使用 Windows 10/11 64 位与 Python 3.10–3.12，项目发布构建使用 Python 3.11。解压项目后双击 `run_windows.bat`。脚本创建或复用 `.venv`，基础依赖缺失时联网安装。目录版可执行文件需保留同目录的 `_internal`。
