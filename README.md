@@ -116,3 +116,5 @@ Windows 离线安装版打开后可选择安装目录。安装程序将应用和
 [项目文档与发布流程](docs/README.md) · [界面设计规范](design-system/README.md) · [原图示例](docs/images/原图.jpg) · [效果示例](docs/images/模拟图.png)
 
 代码使用 MIT 许可证。内置更纱黑体 SC 使用 SIL Open Font License 1.1。模型权重单独下载，使用条件以所选模型仓库为准。[项目许可证](LICENSE) · [字体许可证](app/assets/fonts/OFL.txt)
+
+PS 联动实现暂只在本地开发分支保存；GitHub 的 feature/v1.2.5-photoshop 分支当前仅预留正式版基线，不包含联动实现源码。
