@@ -105,6 +105,11 @@ python -m venv .venv
 
 ## 构建与文档
 
+### 下载链接
+```
+[提取码 1145](https://pan.baidu.com/s/1YCzmQz8v4SPe_HqDSKdQPQ)
+```
+
 Windows 离线安装版打开后可选择安装目录。安装程序将应用和运行库直接写入所选位置，无需预先安装 Python、Qt 或 AI 依赖。安装版随附用于离线深度估算的 Depth Anything V2 Small，其他模型可在程序内下载。
 
 安装包使用完整目录版作为输入，可通过 `tools/build_installer.py` 制作。构建时使用 Windows .NET Framework 编译安装界面。安装目标须为新目录或空目录。
@@ -114,8 +119,7 @@ Windows 离线安装版打开后可选择安装目录。安装程序将应用和
 .\.venv\Scripts\python.exe tools\build_exe.py
 ```
 
-默认输出 `dist\伯爵大光圈模拟\` 目录版。可选 `--onefile` 生成单文件版，或在已安装 AI 依赖的构建环境中使用 `--with-ai`。构建后可执行 `.\伯爵大光圈模拟.exe --selftest` 检查启动。[历史构建下载，提取码 1145](https://pan.baidu.com/s/1YCzmQz8v4SPe_HqDSKdQPQ)
-
+默认输出 `dist\伯爵大光圈模拟\` 目录版。可选 `--onefile` 生成单文件版，或在已安装 AI 依赖的构建环境中使用 `--with-ai`。构建后可执行 `.\伯爵大光圈模拟.exe --selftest` 检查启动。
 [项目文档与发布流程](docs/README.md) · [界面设计规范](design-system/README.md) · [原图示例](docs/images/原图.jpg) · [效果示例](docs/images/模拟图.png)
 
 代码使用 MIT 许可证。内置更纱黑体 SC 使用 SIL Open Font License 1.1。模型权重单独下载，使用条件以所选模型仓库为准。[项目许可证](LICENSE) · [字体许可证](app/assets/fonts/OFL.txt)
